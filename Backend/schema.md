@@ -365,19 +365,27 @@ CREATE TABLE IF NOT EXISTS stage08_pvc_seal_records (
 );
 CREATE INDEX IF NOT EXISTS idx_s08_serial ON stage08_pvc_seal_records(meter_serial_no, created_at DESC);
 
--- STAGE 09: METER BOX LASER PRINT & OCR READ-BACK
-CREATE TABLE IF NOT EXISTS stage09_meter_box_records (
-    record_id BIGSERIAL PRIMARY KEY,
+-- STAGE 09: METER BOX LASER PRINT & DLMS OPTICAL READ-BACK (stage09_meter_records)
+CREATE TABLE IF NOT EXISTS stage09_meter_records (
+    id SERIAL PRIMARY KEY,
+    work_id VARCHAR(50) NOT NULL,
+    stage_id INT DEFAULT 9,
     meter_serial_no VARCHAR(100) NOT NULL,
-    laser_machine_id VARCHAR(50) NOT NULL,
-    qr_verified VARCHAR(100),
-    print_quality_score NUMERIC(4,2),
-    test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
-    failure_reason TEXT,
+    device_no VARCHAR(100),
+    imei_no VARCHAR(100),
+    nic_sr_no VARCHAR(100),
+    raw_dlms_data JSONB,
     operator_id VARCHAR(50),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_name VARCHAR(100) DEFAULT NULL,
+    user_role VARCHAR(50) DEFAULT NULL,
+    status VARCHAR(50) DEFAULT 'PASS',
+    print VARCHAR(50) DEFAULT NULL,
+    print_at TIMESTAMP DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_s09_serial ON stage09_meter_box_records(meter_serial_no, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s09_serial ON stage09_meter_records(meter_serial_no, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s09_imei ON stage09_meter_records(imei_no);
 
 -- STAGE 10: SINGLE METER CARTON PRINT & WEIGHING SCALE
 CREATE TABLE IF NOT EXISTS stage10_carton_records (

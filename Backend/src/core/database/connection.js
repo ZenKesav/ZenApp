@@ -249,36 +249,6 @@ async function initDatabase() {
         updated_by VARCHAR(100)
       );
 
-      CREATE TABLE IF NOT EXISTS jig_test_cycles (
-        cycle_id SERIAL PRIMARY KEY,
-        cycle_uuid VARCHAR(50),
-        stage_id INT DEFAULT 4,
-        jig_id VARCHAR(50) DEFAULT 'JIG-001',
-        total_channels INT DEFAULT 8,
-        connected_count INT DEFAULT 0,
-        passed_channels INT DEFAULT 0,
-        failed_channels INT DEFAULT 0,
-        operator_id VARCHAR(50) DEFAULT 'EMP001',
-        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS nic_card_test_results (
-        id SERIAL PRIMARY KEY,
-        cycle_id INT NOT NULL,
-        nic_uuid VARCHAR(50) NOT NULL UNIQUE,
-        channel_no INT NOT NULL,
-        imei VARCHAR(100),
-        hwv VARCHAR(50),
-        fwv VARCHAR(50),
-        sig VARCHAR(50),
-        status VARCHAR(20) NOT NULL,
-        stage_id INT DEFAULT 4,
-        operator_id VARCHAR(50) DEFAULT 'EMP001',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
       CREATE TABLE IF NOT EXISTS supervisor_tests (
         id SERIAL PRIMARY KEY,
         supervisor_id VARCHAR(50) NOT NULL,
@@ -376,11 +346,7 @@ const query = {
     try {
       let pgSql = convertPlaceholders(sql);
       if (!pgSql.toUpperCase().includes('RETURNING') && pgSql.trim().toUpperCase().startsWith('INSERT')) {
-        if (/insert into jig_test_cycles/i.test(pgSql)) {
-          pgSql += ' RETURNING cycle_id';
-        } else {
-          pgSql += ' RETURNING id';
-        }
+        pgSql += ' RETURNING id';
       }
       const res = await pgQuery(pgSql, params);
       const insertedId = res?.rows?.[0]?.cycle_id || res?.rows?.[0]?.id || 0;
