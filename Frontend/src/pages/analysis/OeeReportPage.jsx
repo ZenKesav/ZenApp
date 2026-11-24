@@ -1,0 +1,1 @@
+import React from 'react'; export default function OeeReportPage() { return <div>OEE Reports</div>; }

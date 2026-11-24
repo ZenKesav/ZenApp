@@ -1,0 +1,15 @@
+node_modules/
+logs/*.log
+logs/stages/*.log
+uploads/temp/*
+uploads/images/*
+uploads/pdf/*
+.env
+.env.*
+.env.example
+.env.production
+.env.local
+.env.*.local
+.DS_Store
+Thumbs.db
+*.log

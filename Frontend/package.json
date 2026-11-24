@@ -1,0 +1,31 @@
+{
+  "name": "zenmeter-new-frontend",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "apexcharts": "^8.9.1",
+    "axios": "^1.7.2",
+    "lucide-react": "^0.344.0",
+    "pdfjs-dist": "^6.5.438",
+    "react": "^18.2.0",
+    "react-apexcharts": "^2.2.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "recharts": "^3.11.0",
+    "socket.io-client": "^4.7.5",
+    "sweetalert2": "^11.26.25"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.1.6"
+  }
+}

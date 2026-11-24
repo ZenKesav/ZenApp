@@ -1,0 +1,1 @@
+import React from 'react'; export default function DefectInspectionPage() { return <div>Defect Inspection</div>; }

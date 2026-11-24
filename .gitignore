@@ -1,0 +1,43 @@
+# MacOS and Windows system files
+.DS_Store
+Thumbs.db
+
+# Environment variables & local configuration (Do not push to Git)
+.env
+.env.*
+*.env
+*.env.*
+.env.example
+.env.production
+.env.local
+.env.*.local
+production.env
+**/production.env
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+**/.env.example
+**/.env.production
+**/.env.local
+**/.env.*.local
+
+# Vite temporary files
+**/vite.config.js.timestamp-*
+
+# Node.js dependencies
+Backend/node_modules/
+Frontend/node_modules/
+NewFrontend/node_modules/
+node_modules/
+
+# Logs
+Backend/Log/*.log
+Backend/logs/*.log
+*.log
+
+# Build Outputs
+Frontend/dist/
+Frontend/dist-ssr/
+dist/
+dist-ssr/

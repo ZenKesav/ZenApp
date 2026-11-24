@@ -1,1 +1,2 @@
-# ZenApp
+# ZenmeterApplication
+Zenmeter Jig Test applications
