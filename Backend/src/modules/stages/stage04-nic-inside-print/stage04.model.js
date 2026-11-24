@@ -4,7 +4,8 @@ const { query } = db;
 const Stage04Model = {
 
   /**
-   * Execute atomic PostgreSQL transaction to save Jig Cycle and Channel Results.
+   * Execute atomic PostgreSQL transaction to save Jig Cycle and Channel Results
+   * directly into the unified 4th stage table: stage04_nic_print_records.
    * Checks for duplicate IMEIs against existing DB records and within the current batch.
    */
   async saveJigData(meterNo = 'NIC_JIG_STAGE_4', stageId = 4, jigData = {}, operatorId = 'EMP001') {
@@ -32,22 +33,22 @@ const Stage04Model = {
       if (client) {
         await client.query('BEGIN');
 
-        // Step 1: Fetch existing IMEIs from database to check duplicates
+        // Step 1: Fetch existing IMEIs from stage04_nic_print_records to check duplicates
         const existingImeiRes = await client.query(
-          `SELECT DISTINCT imei FROM nic_card_test_results WHERE imei IS NOT NULL AND TRIM(imei) != ''`
+          `SELECT DISTINCT imei_no FROM stage04_nic_print_records WHERE imei_no IS NOT NULL AND TRIM(imei_no) != ''`
         );
-        const dbImeiSet = new Set(existingImeiRes.rows.map(r => String(r.imei).trim()));
+        const dbImeiSet = new Set(existingImeiRes.rows.map(r => String(r.imei_no).trim()));
         const seenBatchImeis = new Set();
 
         // Step 2: Fetch maximum numeric suffix for ZMRDNIC UUID sequence
         let maxNum = 0;
         const maxRes = await client.query(
-          `SELECT nic_uuid FROM nic_card_test_results WHERE nic_uuid LIKE 'ZMRDNIC%' ORDER BY id DESC`
+          `SELECT nic_serial_no FROM stage04_nic_print_records WHERE nic_serial_no LIKE 'ZMRDNIC%' ORDER BY record_id DESC LIMIT 500`
         );
         if (maxRes.rows && maxRes.rows.length > 0) {
           for (const row of maxRes.rows) {
-            if (row.nic_uuid) {
-              const match = row.nic_uuid.match(/ZMRDNIC(\d+)/i);
+            if (row.nic_serial_no) {
+              const match = row.nic_serial_no.match(/ZMRDNIC(\d+)/i);
               if (match) {
                 const val = parseInt(match[1], 10);
                 if (val > maxNum) maxNum = val;
@@ -56,7 +57,14 @@ const Stage04Model = {
           }
         }
 
-        // Step 3: Process channels - assign sequential UUIDs ONLY to new, unique IMEIs
+        // Step 3: Fetch next cycle_id
+        const maxCycleRes = await client.query(
+          `SELECT COALESCE(MAX(cycle_id), 0) + 1 AS next_cycle_id FROM stage04_nic_print_records`
+        );
+        const cycleId = parseInt(maxCycleRes.rows[0].next_cycle_id, 10);
+        const cycleUuid = `ZMRJIG${String(cycleId).padStart(4, '0')}`;
+
+        // Step 4: Process channels - assign sequential UUIDs ONLY to new, unique IMEIs
         const savedNicCards = [];
         const updatedChannels = rawChannels.map(c => {
           const isPassOrCon = c.st === 'PASS' || c.st === 'CON';
@@ -92,42 +100,38 @@ const Stage04Model = {
         const connectedCount = rawChannels.filter(c => c.st === 'PASS' || c.st === 'CON').length;
         const failedCount = rawChannels.filter(c => c.st === 'FAIL').length;
 
-        // Step 4: Create Jig Test Cycle Record
-        const cycleInsertRes = await client.query(
-          `INSERT INTO jig_test_cycles (
-             stage_id, jig_id, total_channels, connected_count, passed_channels, failed_channels, operator_id, started_at, completed_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-           RETURNING cycle_id`,
-          [stageId, jigId, totalChannels, connectedCount, passedCount, failedCount, String(operatorId)]
-        );
-        const cycleId = cycleInsertRes.rows[0].cycle_id;
-        const cycleUuid = `ZMRJIG${String(cycleId).padStart(4, '0')}`;
-
-        await client.query(
-          `UPDATE jig_test_cycles SET cycle_uuid = $1 WHERE cycle_id = $2`,
-          [cycleUuid, cycleId]
-        );
-
-        // Step 5: Save only NEW PASS NIC cards to database
+        // Step 5: Save each channel test directly into stage04_nic_print_records
         for (const c of updatedChannels) {
-          if (c.st === 'PASS' && c.nic_uuid) {
-            await client.query(
-              `INSERT INTO nic_card_test_results (
-                 cycle_id, nic_uuid, channel_no, imei, hwv, fwv, sig, status, stage_id, operator_id
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'PASS', $8, $9)`,
-              [
-                cycleId,
-                c.nic_uuid,
-                c.ch,
-                c.imei || null,
-                c.hwv || null,
-                c.fwv || null,
-                c.sig || null,
-                stageId,
-                String(operatorId)
-              ]
-            );
-          }
+          const nicUuid = c.nic_uuid || `CH${c.ch}_${cycleUuid}`;
+          const imeiVal = c.imei ? String(c.imei).trim() : null;
+          const status = c.st === 'PASS' ? 'PASS' : (c.st === 'DUPLICATE' ? 'FAIL' : 'FAIL');
+
+          await client.query(
+            `INSERT INTO stage04_nic_print_records (
+               cycle_id, cycle_uuid, channel_no, jig_id, laser_machine_id,
+               nic_serial_no, imei_no, hwv, fwv, sig,
+               total_channels, connected_count, passed_channels, failed_channels,
+               test_status, failure_reason, operator_id, created_at
+             ) VALUES ($1, $2, $3, $4, 'LASER-01', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)`,
+            [
+              cycleId,
+              cycleUuid,
+              c.ch || 1,
+              jigId,
+              nicUuid,
+              imeiVal,
+              c.hwv || 'v1.2',
+              c.fwv || 'v2.0',
+              c.sig || '-65dBm',
+              totalChannels,
+              connectedCount,
+              passedCount,
+              failedCount,
+              status,
+              c.message || (status === 'PASS' ? null : 'Channel test failed'),
+              String(operatorId)
+            ]
+          );
         }
 
         // Step 6: Log cycle result to stage_results audit table
@@ -169,15 +173,8 @@ const Stage04Model = {
           channels: updatedChannels
         };
       } else {
-        const cycleRes = await query.run(
-          `INSERT INTO jig_test_cycles (stage_id, jig_id, total_channels, connected_count, passed_channels, failed_channels, operator_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [stageId, jigId, rawChannels.length, rawChannels.length, rawChannels.length, 0, String(operatorId)]
-        );
-
-        const cycleId = cycleRes.id || 1;
+        const cycleId = Date.now() % 100000;
         const cycleUuid = `ZMRJIG${String(cycleId).padStart(4, '0')}`;
-
         let currentCounter = 0;
         const savedNicCards = [];
         const updatedChannels = rawChannels.map(c => {
@@ -218,7 +215,6 @@ const Stage04Model = {
     }
   },
 
-
   async checkDuplicateImeis(imeis = []) {
     if (!Array.isArray(imeis) || imeis.length === 0) return [];
     const cleanImeis = imeis.map(i => String(i).trim()).filter(Boolean);
@@ -232,14 +228,14 @@ const Stage04Model = {
     try {
       if (client) {
         const res = await client.query(
-          `SELECT DISTINCT imei FROM nic_card_test_results WHERE imei = ANY($1::text[])`,
+          `SELECT DISTINCT imei_no AS imei FROM stage04_nic_print_records WHERE imei_no = ANY($1::text[])`,
           [cleanImeis]
         );
         return res.rows.map(r => r.imei);
       } else {
         const placeholders = cleanImeis.map((_, idx) => `$${idx + 1}`).join(',');
         const res = await query.all(
-          `SELECT DISTINCT imei FROM nic_card_test_results WHERE imei IN (${placeholders})`,
+          `SELECT DISTINCT imei_no AS imei FROM stage04_nic_print_records WHERE imei_no IN (${placeholders})`,
           cleanImeis
         );
         return (res || []).map(r => r.imei);
@@ -254,7 +250,6 @@ const Stage04Model = {
     }
   },
 
-
   async getJigRecords(filters = {}) {
     let client = null;
     if (db.pool) {
@@ -266,14 +261,6 @@ const Stage04Model = {
         const whereClauses = [];
         const params = [];
         let pIndex = 1;
-
-        if (filters.stage_id || filters.stage) {
-          const stg = parseInt(filters.stage_id || filters.stage, 10);
-          if (!isNaN(stg)) {
-            whereClauses.push(`c.stage_id = $${pIndex++}`);
-            params.push(stg);
-          }
-        }
 
         if (filters.operator_id || filters.operator || filters.employee_id) {
           const op = String(filters.operator_id || filters.operator || filters.employee_id).trim();
@@ -291,28 +278,22 @@ const Stage04Model = {
         if (filters.status) {
           const st = String(filters.status).toUpperCase();
           if (st === 'PASS') {
-            whereClauses.push(`(c.passed_channels > 0)`);
+            whereClauses.push(`(c.test_status = 'PASS' OR c.passed_channels > 0)`);
           } else if (st === 'FAIL') {
-            whereClauses.push(`(c.failed_channels > 0 OR c.passed_channels = 0)`);
+            whereClauses.push(`(c.test_status = 'FAIL' OR c.failed_channels > 0)`);
           }
         }
 
         if (filters.search) {
           const term = `%${String(filters.search).toLowerCase()}%`;
           whereClauses.push(`(
-            LOWER(COALESCE(c.cycle_uuid, CONCAT('ZMRJIG', LPAD(CAST(c.cycle_id AS TEXT), 4, '0')))) LIKE $${pIndex} OR
+            LOWER(COALESCE(c.cycle_uuid, '')) LIKE $${pIndex} OR
+            LOWER(COALESCE(c.nic_serial_no, '')) LIKE $${pIndex} OR
+            LOWER(COALESCE(c.imei_no, '')) LIKE $${pIndex} OR
             LOWER(COALESCE(c.operator_id, '')) LIKE $${pIndex} OR
             LOWER(COALESCE(u.employee_id, '')) LIKE $${pIndex} OR
             LOWER(COALESCE(u.name, '')) LIKE $${pIndex} OR
-            LOWER(COALESCE(u.user_name, '')) LIKE $${pIndex} OR
-            EXISTS (
-              SELECT 1 FROM nic_card_test_results nr 
-              WHERE nr.cycle_id = c.cycle_id AND (
-                LOWER(COALESCE(nr.nic_uuid, '')) LIKE $${pIndex} OR 
-                LOWER(COALESCE(nr.imei, '')) LIKE $${pIndex}
-              )
-            ) OR
-            LOWER(CONCAT('zmrdnic', c.cycle_id)) LIKE $${pIndex}
+            LOWER(COALESCE(u.user_name, '')) LIKE $${pIndex}
           )`);
           params.push(term);
           pIndex++;
@@ -320,101 +301,62 @@ const Stage04Model = {
 
         const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
+        // Query grouped by cycle from stage04_nic_print_records
         const cyclesRes = await client.query(`
           SELECT 
-            c.cycle_id,
-            COALESCE(c.cycle_uuid, CONCAT('ZMRJIG', LPAD(CAST(c.cycle_id AS TEXT), 4, '0'))) as cycle_uuid,
-            c.stage_id,
-            c.jig_id,
-            c.total_channels,
-            c.connected_count,
-            c.passed_channels,
-            c.failed_channels,
+            COALESCE(c.cycle_id, c.record_id) as cycle_id,
+            COALESCE(c.cycle_uuid, CONCAT('ZMRJIG', LPAD(CAST(COALESCE(c.cycle_id, c.record_id) AS TEXT), 4, '0'))) as cycle_uuid,
+            4 as stage_id,
+            COALESCE(c.jig_id, 'JIG-001') as jig_id,
+            MAX(COALESCE(c.total_channels, 8)) as total_channels,
+            MAX(COALESCE(c.connected_count, 8)) as connected_count,
+            MAX(COALESCE(c.passed_channels, 8)) as passed_channels,
+            MAX(COALESCE(c.failed_channels, 0)) as failed_channels,
             c.operator_id,
-            c.created_at,
+            MAX(c.created_at) as created_at,
             u.name as operator_name,
             u.user_name as operator_username,
             u.role as operator_role,
-            ps.stage_name as db_stage_name,
-            ps.stage_number as db_stage_number
-          FROM jig_test_cycles c
+            'NIC Card Inside Print' as db_stage_name,
+            4 as db_stage_number
+          FROM stage04_nic_print_records c
           LEFT JOIN users u ON (c.operator_id = u.employee_id OR c.operator_id = CAST(u.id AS TEXT) OR c.operator_id = u.user_name)
-          LEFT JOIN production_stages ps ON (c.stage_id = ps.stage_number OR c.stage_id = ps.id)
           ${whereSql}
-          ORDER BY c.cycle_id DESC
+          GROUP BY COALESCE(c.cycle_id, c.record_id), c.cycle_uuid, c.jig_id, c.operator_id, u.name, u.user_name, u.role
+          ORDER BY cycle_id DESC
         `, params);
 
         if (cyclesRes.rows && cyclesRes.rows.length > 0) {
           const groupedCycles = [];
 
           for (const cyc of cyclesRes.rows) {
-            const channelRes = await client.query(
-              `SELECT id, nic_uuid, channel_no, imei, hwv, fwv, sig, status, created_at
-               FROM nic_card_test_results
-               WHERE cycle_id = $1
-               ORDER BY channel_no ASC`,
-              [cyc.cycle_id]
-            );
+            const cardsRes = await client.query(`
+              SELECT 
+                record_id as id,
+                COALESCE(cycle_id, record_id) as cycle_id,
+                nic_serial_no as nic_uuid,
+                channel_no,
+                imei_no as imei,
+                hwv,
+                fwv,
+                sig,
+                test_status as status,
+                4 as stage_id,
+                operator_id,
+                created_at
+              FROM stage04_nic_print_records
+              WHERE COALESCE(cycle_id, record_id) = $1
+              ORDER BY channel_no ASC, record_id ASC
+            `, [cyc.cycle_id]);
 
-            const hasChannels = channelRes.rows && channelRes.rows.length > 0;
-            const channels = Array.from({ length: 8 }, (_, idx) => {
-              const chNo = idx + 1;
-              const found = hasChannels ? channelRes.rows.find(r => r.channel_no === chNo) : null;
-              if (found) {
-                return {
-                  channel_no: chNo,
-                  nic_uuid: found.nic_uuid,
-                  imei: found.imei,
-                  hwv: found.hwv || 'v1.2',
-                  fwv: found.fwv || 'v2.0',
-                  sig: found.sig || '-65dBm',
-                  status: found.status || 'PASS'
-                };
-              }
-              if (!hasChannels && cyc.passed_channels && idx < cyc.passed_channels) {
-                return {
-                  channel_no: chNo,
-                  nic_uuid: `ZMRDNIC${String(cyc.cycle_id * 10 + chNo).padStart(4, '0')}`,
-                  imei: `86099608${String(cyc.cycle_id).padStart(4, '0')}${chNo}`,
-                  hwv: 'v1.2',
-                  fwv: 'v2.0',
-                  sig: '-65dBm',
-                  status: 'PASS'
-                };
-              }
-              return {
-                channel_no: chNo,
-                nic_uuid: null,
-                imei: null,
-                hwv: null,
-                fwv: null,
-                sig: null,
-                status: 'NCON'
-              };
-            });
-
-            const operatorDisplay = cyc.operator_name ? `${cyc.operator_name} (${cyc.operator_id})` : cyc.operator_id;
-            const stageNum = cyc.db_stage_number || cyc.stage_id || 4;
-            const cleanDbStage = String(cyc.db_stage_name || '').replace(/^(?:Stage\s*\d+\s*:\s*)+/i, '').trim();
-            const stageName = `Stage ${String(stageNum).padStart(2, '0')}: ${cleanDbStage || 'Production Stage'}`;
-
+            const cards = cardsRes.rows || [];
             groupedCycles.push({
-              id: cyc.cycle_id,
-              cycle_id: cyc.cycle_id,
-              cycle_uuid: cyc.cycle_uuid,
-              stage_id: stageNum,
-              stage_name: stageName,
-              total_channels: cyc.total_channels || 8,
-              passed_channels: cyc.passed_channels !== undefined ? cyc.passed_channels : (channelRes.rowCount || 0),
-              connected_count: cyc.connected_count || cyc.passed_channels || channelRes.rowCount || 0,
-              failed_channels: cyc.failed_channels || 0,
-              operator_id: cyc.operator_id,
-              operator_name: cyc.operator_name || null,
-              operator_role: cyc.operator_role || 'OPERATOR',
-              operator_display: operatorDisplay,
-              status: (cyc.passed_channels > 0 || channelRes.rowCount > 0) ? 'PASS' : 'FAIL',
-              created_at: cyc.created_at,
-              channels
+              ...cyc,
+              stage_name: 'Stage 04: NIC Card Inside Print',
+              passed_count: cards.filter(cd => cd.status === 'PASS').length || cyc.passed_channels,
+              connected_count: cards.length || cyc.connected_count,
+              failed_count: cards.filter(cd => cd.status === 'FAIL').length || cyc.failed_channels,
+              nic_cards: cards
             });
           }
 
@@ -422,11 +364,15 @@ const Stage04Model = {
         }
 
         return [];
+      } else {
+        const cycles = await query.all(
+          `SELECT record_id as id, cycle_id, nic_serial_no as nic_uuid, channel_no, imei_no as imei, test_status as status, operator_id, created_at 
+           FROM stage04_nic_print_records ORDER BY record_id DESC LIMIT 50`
+        );
+        return cycles || [];
       }
-
-      return [];
     } catch (err) {
-      console.warn('[Stage04Model] getJigRecords error:', err.message);
+      console.error('[Stage04Model] getJigRecords error:', err.message);
       return [];
     } finally {
       if (client) {
@@ -434,7 +380,6 @@ const Stage04Model = {
       }
     }
   }
-
 };
 
 module.exports = Stage04Model;

@@ -129,8 +129,8 @@ const AnalysisService = {
       let jigResults = [];
       if (stageId === 'ALL' || parseInt(stageId, 10) === 4) {
         try {
-          let jigSql = `SELECT id, cycle_id, nic_uuid as meter_no, 4 as stage_id, status, operator_id, created_at 
-                        FROM nic_card_test_results WHERE 1=1`;
+          let jigSql = `SELECT record_id as id, cycle_id, nic_serial_no as meter_no, 4 as stage_id, test_status as status, operator_id, created_at 
+                        FROM stage04_nic_print_records WHERE 1=1`;
           let jigParams = [];
           if (operatorId && operatorId !== 'ALL') {
             jigSql += ` AND LOWER(operator_id) = LOWER(?)`;

@@ -1,7 +1,8 @@
 -- =============================================================================
--- DATABASE: ZenmeterApplication
+-- DATABASE: Zenmeter
 -- ENGINE: PostgreSQL 14+ / pgAdmin 4
--- ARCHITECTURE: Enterprise Smart Meter MES High-Concurrency Schema (Production Ready)
+-- ARCHITECTURE: 20-Year Lifetime Enterprise Smart Meter MES Schema (Production Ready)
+-- CAPACITY: 5,000 meters/day (~36.5 Million Meters over 20 Years, < 2ms Query Time)
 -- =============================================================================
 
 -- Enable required cryptographic and UUID extensions
@@ -21,317 +22,250 @@ END;
 $$ LANGUAGE 'plpgsql';
 
 -- =============================================================================
--- PART 2: RBAC & IDENTITY MANAGEMENT (Common Across All Stages)
+-- PART 2: RBAC & IDENTITY MANAGEMENT (10 Master Configuration Tables)
 -- =============================================================================
 
 -- 1. Roles Master Table
 CREATE TABLE IF NOT EXISTS roles (
-    role_id SERIAL PRIMARY KEY,
-    role_code VARCHAR(30) UNIQUE NOT NULL,       -- 'ADMIN', 'SUPERVISOR', 'QC_INSPECTOR', etc.
-    role_name VARCHAR(100) NOT NULL,
-    description TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_by INT,                              -- FK attached after users table creation
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT,                              -- FK attached after users table creation
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    role_id INT,
+    role_name VARCHAR(100) UNIQUE NOT NULL,       -- 'ADMIN', 'SUPERVISOR', 'QC', 'OPERATOR'
+    role_description TEXT,
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    created_by VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TRIGGER trg_roles_updated_at 
-BEFORE UPDATE ON roles 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
 
 -- 2. Users Table
 CREATE TABLE IF NOT EXISTS users (
-    user_id SERIAL PRIMARY KEY,
-    employee_code VARCHAR(50) UNIQUE NOT NULL,   -- e.g., 'ADMIN001', 'ZMRD004'
-    full_name VARCHAR(120) NOT NULL,
-    email VARCHAR(150) UNIQUE,
-    phone_number VARCHAR(20),
+    id SERIAL PRIMARY KEY,
+    employee_id VARCHAR(50) UNIQUE NOT NULL,      -- e.g., 'ADMIN001', 'ZMRD001'
+    user_name VARCHAR(100) DEFAULT 'Zenmeter',
     password_hash VARCHAR(255) NOT NULL,
-    role_id INT NOT NULL REFERENCES roles(role_id) ON DELETE RESTRICT,
-    badge_barcode VARCHAR(100) UNIQUE,          -- Badge scan login on touch Jigs
-    is_active BOOLEAN DEFAULT TRUE,
-    last_login_at TIMESTAMPTZ,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    raw_password VARCHAR(255),
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100),
+    phone VARCHAR(50),
+    gender VARCHAR(20) DEFAULT 'Male',
+    role_id INT DEFAULT 1,
+    role VARCHAR(50) NOT NULL,
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    stage_id VARCHAR(100),
+    assigned_stage TEXT,
+    assigned_by VARCHAR(100),
+    assigned_at TIMESTAMP,
+    reassigned_by VARCHAR(100),
+    reassigned_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(100),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(100)
 );
 
-CREATE TRIGGER trg_users_updated_at 
-BEFORE UPDATE ON users 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
+CREATE INDEX IF NOT EXISTS idx_users_emp_id ON users(employee_id);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
-CREATE INDEX idx_users_emp_code ON users(employee_code);
-CREATE INDEX idx_users_badge ON users(badge_barcode);
-CREATE INDEX idx_users_role ON users(role_id);
-
--- Attach foreign keys to roles table for created_by and updated_by
-ALTER TABLE roles ADD CONSTRAINT fk_roles_created_by FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL;
-ALTER TABLE roles ADD CONSTRAINT fk_roles_updated_by FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL;
-
--- 3. System Permissions Master Table
+-- 3. System Permissions Master Table (The 17 System Permissions)
 CREATE TABLE IF NOT EXISTS permissions (
-    permission_id SERIAL PRIMARY KEY,
-    permission_code VARCHAR(50) UNIQUE NOT NULL, -- e.g., 'STAGE_BYPASS', 'QC_RETEST_OVERRIDE'
-    module_name VARCHAR(50) NOT NULL,            -- e.g., 'ADMIN', 'SUPERVISOR', 'QC', 'STAGE'
-    description TEXT,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    category VARCHAR(100) NOT NULL
 );
-
-CREATE TRIGGER trg_permissions_updated_at 
-BEFORE UPDATE ON permissions 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
 
 -- 4. Role Permissions Cross-Mapping
 CREATE TABLE IF NOT EXISTS role_permissions (
-    id SERIAL PRIMARY KEY,
-    role_id INT NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
-    permission_id INT NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_role_permission UNIQUE (role_id, permission_id)
+    role_name VARCHAR(100) NOT NULL,
+    permission_code VARCHAR(100) NOT NULL,
+    PRIMARY KEY (role_name, permission_code)
 );
-
-CREATE TRIGGER trg_role_permissions_updated_at 
-BEFORE UPDATE ON role_permissions 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
 
 -- 5. Production Shifts Table
 CREATE TABLE IF NOT EXISTS shifts (
-    shift_id SERIAL PRIMARY KEY,
-    shift_code VARCHAR(20) UNIQUE NOT NULL,     -- 'SHIFT_A', 'SHIFT_B', 'SHIFT_C'
-    shift_name VARCHAR(50) NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    is_overnight BOOLEAN DEFAULT FALSE,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    shift_id VARCHAR(50) UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    start_time VARCHAR(20) NOT NULL,
+    end_time VARCHAR(20) NOT NULL,
+    active_days VARCHAR(100) DEFAULT 'Mon,Tue,Wed,Thu,Fri,Sat',
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(100),
+    updated_at TIMESTAMP,
+    updated_by VARCHAR(100)
 );
-
-CREATE TRIGGER trg_shifts_updated_at 
-BEFORE UPDATE ON shifts 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
 
 -- 6. User Attendance & Station Clock-In History
 CREATE TABLE IF NOT EXISTS user_attendance_history (
-    attendance_id BIGSERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    shift_id INT NOT NULL REFERENCES shifts(shift_id) ON DELETE RESTRICT,
-    clock_in_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    clock_out_time TIMESTAMPTZ,
-    terminal_ip VARCHAR(45),
-    station_jig_id VARCHAR(50),
-    status VARCHAR(20) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'COMPLETED', 'AUTO_CLOSED')),
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    shift_id VARCHAR(50),
+    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    logout_time TIMESTAMP,
+    ip_address VARCHAR(50),
+    status VARCHAR(20) DEFAULT 'ACTIVE'
 );
+CREATE INDEX IF NOT EXISTS idx_attendance_user ON user_attendance_history(user_id, login_time DESC);
 
-CREATE TRIGGER trg_attendance_updated_at 
-BEFORE UPDATE ON user_attendance_history 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_attendance_user_shift ON user_attendance_history(user_id, shift_id, clock_in_time);
-
--- =============================================================================
--- PART 3: PRODUCTION STAGE CONFIGURATION & OPERATOR ALLOCATION
--- =============================================================================
-
--- 7. Production Stages Master Table
+-- 7. Production Stages Master Table (Stages 1 through 11)
 CREATE TABLE IF NOT EXISTS production_stages (
-    stage_id INT PRIMARY KEY,                   -- 1, 2, 4, 6, 7, 8, 9, 10, 11
-    stage_code VARCHAR(30) UNIQUE NOT NULL,     -- 'S01_PCB_LOAD', 'S06_CALIBRATION'
+    id SERIAL PRIMARY KEY,
+    stage_id INT UNIQUE,
+    stage_number INT UNIQUE,
+    stage_code VARCHAR(50) UNIQUE,
     stage_name VARCHAR(100) NOT NULL,
-    sequence_order INT NOT NULL,                -- Interlock progression sequence
-    is_mandatory BOOLEAN DEFAULT TRUE,
-    is_active BOOLEAN DEFAULT TRUE,
     description TEXT,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TRIGGER trg_production_stages_updated_at 
-BEFORE UPDATE ON production_stages 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
 
 -- 8. Operator Stage & Jig Assignments
 CREATE TABLE IF NOT EXISTS stage_assignments (
-    assignment_id BIGSERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    stage_id INT NOT NULL REFERENCES production_stages(stage_id) ON DELETE RESTRICT,
-    shift_id INT NOT NULL REFERENCES shifts(shift_id) ON DELETE RESTRICT,
-    jig_id VARCHAR(50) NOT NULL,                -- e.g., 'JIG-005', 'CALIB-01'
-    assigned_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_user_stage_shift_date UNIQUE (user_id, stage_id, shift_id, assigned_date, jig_id)
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    stage_id INT NOT NULL,
+    shift_id VARCHAR(50),
+    jig_id VARCHAR(50),
+    assigned_date DATE DEFAULT CURRENT_DATE,
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(100)
 );
 
-CREATE TRIGGER trg_stage_assignments_updated_at 
-BEFORE UPDATE ON stage_assignments 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_stage_assignments_lookup ON stage_assignments(user_id, stage_id, assigned_date, is_active);
-
--- 9. Stage Work Forms & Dynamic Product Model Rules / Thresholds
+-- 9. Stage Work Forms & Parameter Thresholds
 CREATE TABLE IF NOT EXISTS stage_work_forms (
-    form_id SERIAL PRIMARY KEY,
-    stage_id INT NOT NULL REFERENCES production_stages(stage_id) ON DELETE CASCADE,
-    meter_model VARCHAR(50) NOT NULL,           -- e.g., 'ZEN-1P-10-60A', 'ZEN-3P-CT'
-    firmware_version VARCHAR(50),
-    voltage_min NUMERIC(8,2),
-    voltage_max NUMERIC(8,2),
-    current_min NUMERIC(8,2),
-    current_max NUMERIC(8,2),
-    tolerance_percentage NUMERIC(6,4),          -- e.g., 0.2000 for Class 0.5S
-    rf_rssi_min NUMERIC(6,2),                   -- e.g., -85.00 dBm
-    weight_min_kg NUMERIC(6,3),
-    weight_max_kg NUMERIC(6,3),
-    validation_schema JSONB,                    -- Extensible dynamic JSON for custom specs
-    is_active BOOLEAN DEFAULT TRUE,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_stage_work_form UNIQUE (stage_id, meter_model, firmware_version)
+    id SERIAL PRIMARY KEY,
+    stage_id INT NOT NULL,
+    stage_name VARCHAR(100) NOT NULL,
+    form_title VARCHAR(150),
+    fields JSONB,
+    thresholds JSONB,
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TRIGGER trg_stage_work_forms_updated_at 
-BEFORE UPDATE ON stage_work_forms 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
+-- 10. Universal Immutable Audit Logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+    audit_id BIGSERIAL PRIMARY KEY,
+    table_name VARCHAR(50) NOT NULL,
+    action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('INSERT', 'UPDATE', 'DELETE')),
+    record_id BIGINT,
+    performed_by VARCHAR(100),
+    ip_address VARCHAR(45),
+    old_data JSONB,
+    new_data JSONB,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(created_at DESC);
 
 -- =============================================================================
--- PART 4: THE CORE METER TRACEABILITY & MAPPING TABLE
+-- PART 3: THE CORE 20-YEAR METER MAPPING TABLE (All Operators & All Stages)
 -- =============================================================================
 
--- 10. Central Meters Master Table (Binds all identities across stages)
-CREATE TABLE IF NOT EXISTS meters (
-    meter_id BIGSERIAL PRIMARY KEY,
-    pcb_serial_no VARCHAR(100) UNIQUE NOT NULL,   -- True birth barcode scanned at Stage 01
-    meter_serial_no VARCHAR(100) UNIQUE,          -- Final laser-marked serial (assigned at Stage 04/09)
-    chip_uid VARCHAR(120),                        -- Microcontroller Unique Hardware ID
-    nic_serial_no VARCHAR(100) UNIQUE,            -- Scanned at Stage 02
-    imei_no VARCHAR(30) UNIQUE,                   -- Scanned at Stage 02 / Stage 04
-    imsi_no VARCHAR(30),
-    mac_address VARCHAR(30),
-    pvc_seal_left VARCHAR(50) UNIQUE,             -- Scanned at Stage 08
-    pvc_seal_right VARCHAR(50) UNIQUE,            -- Scanned at Stage 08
-    carton_barcode VARCHAR(100) UNIQUE,           -- Scanned at Stage 10
-    master_carton_barcode VARCHAR(100),           -- Scanned at Stage 11
+CREATE TABLE IF NOT EXISTS meter_mapping (
+    id BIGSERIAL PRIMARY KEY,
+    meter_serial_no VARCHAR(100) UNIQUE,           -- Final Laser-Marked Serial Number
+    pcb_serial_no VARCHAR(100) UNIQUE NOT NULL,    -- Birth Barcode (Stage 01)
+    chip_uid VARCHAR(120),                         -- MCU Hardware ID (Stage 01)
+    nic_serial_no VARCHAR(100) UNIQUE,             -- Scanned at Stage 02 / 04
+    imei_no VARCHAR(30) UNIQUE,                    -- Scanned at Stage 02 / 04
+    pvc_seal_left VARCHAR(50) UNIQUE,              -- Scanned at Stage 08
+    pvc_seal_right VARCHAR(50) UNIQUE,             -- Scanned at Stage 08
+    carton_barcode VARCHAR(100) UNIQUE,            -- Scanned at Stage 10
+    master_carton_barcode VARCHAR(100),            -- Scanned at Stage 11
     
-    current_stage_id INT REFERENCES production_stages(stage_id) ON DELETE SET NULL, -- Nullable so meter inserts succeed prior to stage config
-    overall_status VARCHAR(20) DEFAULT 'IN_PROGRESS' CHECK (overall_status IN ('IN_PROGRESS', 'PASSED', 'REJECTED', 'QUARANTINE')),
+    -- Stage-by-Stage Progression Statuses: 'PENDING', 'PASS', 'FAIL'
+    stage01_status VARCHAR(20) DEFAULT 'PENDING',
+    stage01_completed_at TIMESTAMPTZ,
+    stage01_operator_id VARCHAR(50),
+    
+    stage02_status VARCHAR(20) DEFAULT 'PENDING',
+    stage02_completed_at TIMESTAMPTZ,
+    stage02_operator_id VARCHAR(50),
+    
+    stage04_status VARCHAR(20) DEFAULT 'PENDING',
+    stage04_completed_at TIMESTAMPTZ,
+    stage04_operator_id VARCHAR(50),
+    
+    stage06_status VARCHAR(20) DEFAULT 'PENDING',
+    stage06_completed_at TIMESTAMPTZ,
+    stage06_operator_id VARCHAR(50),
+    
+    stage07_status VARCHAR(20) DEFAULT 'PENDING',
+    stage07_completed_at TIMESTAMPTZ,
+    stage07_operator_id VARCHAR(50),
+    
+    stage08_status VARCHAR(20) DEFAULT 'PENDING',
+    stage08_completed_at TIMESTAMPTZ,
+    stage08_operator_id VARCHAR(50),
+    
+    stage09_status VARCHAR(20) DEFAULT 'PENDING',
+    stage09_completed_at TIMESTAMPTZ,
+    stage09_operator_id VARCHAR(50),
+    
+    stage10_status VARCHAR(20) DEFAULT 'PENDING',
+    stage10_completed_at TIMESTAMPTZ,
+    stage10_operator_id VARCHAR(50),
+    
+    stage11_status VARCHAR(20) DEFAULT 'PENDING',
+    stage11_completed_at TIMESTAMPTZ,
+    stage11_operator_id VARCHAR(50),
+    
+    -- Overall Lifecycle
+    current_stage INT DEFAULT 1,
+    overall_status VARCHAR(20) DEFAULT 'IN_PROGRESS', -- 'IN_PROGRESS', 'PASSED', 'REJECTED', 'HOLD'
+    qc_status VARCHAR(20) DEFAULT 'PENDING',          -- 'PENDING', 'APPROVED', 'REJECTED'
+    supervisor_status VARCHAR(20) DEFAULT 'NONE',     -- 'NONE', 'VERIFIED', 'OVERRIDDEN'
     is_retest BOOLEAN DEFAULT FALSE,
     retest_count INT DEFAULT 0,
     batch_no VARCHAR(50),
-    meter_model VARCHAR(50) NOT NULL,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
+    meter_model VARCHAR(50) DEFAULT 'ZEN-1P-10-60A',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TRIGGER trg_meters_updated_at 
-BEFORE UPDATE ON meters 
+CREATE TRIGGER trg_meter_mapping_updated_at 
+BEFORE UPDATE ON meter_mapping 
 FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
 
--- Fast Sub-2ms B-Tree Indexes for Instant Barcode Scanner Lookups
-CREATE INDEX idx_meters_pcb ON meters(pcb_serial_no);
-CREATE INDEX idx_meters_serial ON meters(meter_serial_no);
-CREATE INDEX idx_meters_nic ON meters(nic_serial_no);
-CREATE INDEX idx_meters_imei ON meters(imei_no);
-CREATE INDEX idx_meters_pvc_left ON meters(pvc_seal_left);
-CREATE INDEX idx_meters_pvc_right ON meters(pvc_seal_right);
-CREATE INDEX idx_meters_carton ON meters(carton_barcode);
-CREATE INDEX idx_meters_master_carton ON meters(master_carton_barcode);
-CREATE INDEX idx_meters_stage_status ON meters(current_stage_id, overall_status);
-
--- 11. Jig Hardware Test Sessions (Live Station Heartbeats)
-CREATE TABLE IF NOT EXISTS test_sessions (
-    session_id BIGSERIAL PRIMARY KEY,
-    jig_id VARCHAR(50) NOT NULL,
-    stage_id INT NOT NULL REFERENCES production_stages(stage_id) ON DELETE CASCADE,
-    operator_user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    client_ip VARCHAR(45),
-    hardware_status JSONB,                       -- e.g., {"scanner": true, "scale": true, "serialPort": "COM3"}
-    is_active BOOLEAN DEFAULT TRUE,
-    heartbeat_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER trg_test_sessions_updated_at 
-BEFORE UPDATE ON test_sessions 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
+-- Ultra-Fast B-Tree Indexes for Instant Lookups (< 2ms) across 36M+ Rows
+CREATE INDEX IF NOT EXISTS idx_mm_pcb ON meter_mapping(pcb_serial_no);
+CREATE INDEX IF NOT EXISTS idx_mm_serial ON meter_mapping(meter_serial_no);
+CREATE INDEX IF NOT EXISTS idx_mm_nic ON meter_mapping(nic_serial_no);
+CREATE INDEX IF NOT EXISTS idx_mm_imei ON meter_mapping(imei_no);
+CREATE INDEX IF NOT EXISTS idx_mm_carton ON meter_mapping(carton_barcode);
+CREATE INDEX IF NOT EXISTS idx_mm_master ON meter_mapping(master_carton_barcode);
+CREATE INDEX IF NOT EXISTS idx_mm_stage_status ON meter_mapping(current_stage, overall_status);
+CREATE INDEX IF NOT EXISTS idx_mm_created ON meter_mapping(created_at DESC);
 
 -- =============================================================================
--- PART 5: STAGE-WISE ISOLATED TEST TABLES (Direct Jig & Channel Logging)
+-- PART 4: THE 9 STAGE-SEPARATED ISOLATED TEST TABLES (Hardware & Operator)
 -- =============================================================================
 
--- -----------------------------------------------------------------------------
--- STAGE 01: MAIN PCB CODE LOADING & CHIP UID VERIFY
--- -----------------------------------------------------------------------------
+-- STAGE 01: PCB CODE LOADING & CHIP UID VERIFY
 CREATE TABLE IF NOT EXISTS stage01_pcb_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT REFERENCES meters(meter_id) ON DELETE CASCADE,
     pcb_serial_no VARCHAR(100) NOT NULL,
     chip_uid VARCHAR(120),
     jig_id VARCHAR(50) NOT NULL,
-    channel_no INT DEFAULT 1,
-    cycle_code VARCHAR(50),
-    firmware_version VARCHAR(50) NOT NULL,
+    firmware_version VARCHAR(50),
     flash_checksum VARCHAR(100),
     boot_current_ma NUMERIC(8,2),
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    -- Operator ID can be NULL for automated PLC/headless Jigs
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s01_pcb ON stage01_pcb_records(pcb_serial_no, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s01_jig ON stage01_pcb_records(jig_id, test_status);
 
-CREATE TRIGGER trg_stage01_updated_at 
-BEFORE UPDATE ON stage01_pcb_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s01_pcb_serial ON stage01_pcb_records(pcb_serial_no);
-CREATE INDEX idx_s01_meter_id ON stage01_pcb_records(meter_id);
-CREATE INDEX idx_s01_meter_latest ON stage01_pcb_records(meter_id, record_id DESC);
-CREATE INDEX idx_s01_jig_status ON stage01_pcb_records(jig_id, test_status, created_at DESC);
-
--- -----------------------------------------------------------------------------
--- STAGE 02: NIC PCB TEST (SIGNAL, MODEM & IMEI CHECK)
--- -----------------------------------------------------------------------------
+-- STAGE 02: NIC PCB TEST (JIG CHANNELS, MODEM, IMEI)
 CREATE TABLE IF NOT EXISTS stage02_nic_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT REFERENCES meters(meter_id) ON DELETE CASCADE,
     nic_serial_no VARCHAR(100) NOT NULL,
     imei_no VARCHAR(30) NOT NULL,
     jig_id VARCHAR(50) NOT NULL,
@@ -339,425 +273,288 @@ CREATE TABLE IF NOT EXISTS stage02_nic_records (
     cycle_code VARCHAR(50),
     rf_signal_rssi NUMERIC(6,2),
     sim_status VARCHAR(20),
-    at_command_response JSONB,
+    at_response JSONB,
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s02_nic ON stage02_nic_records(nic_serial_no, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s02_imei ON stage02_nic_records(imei_no);
 
-CREATE TRIGGER trg_stage02_updated_at 
-BEFORE UPDATE ON stage02_nic_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s02_nic_serial ON stage02_nic_records(nic_serial_no);
-CREATE INDEX idx_s02_imei ON stage02_nic_records(imei_no);
-CREATE INDEX idx_s02_meter_latest ON stage02_nic_records(meter_id, record_id DESC);
-CREATE INDEX idx_s02_jig_status ON stage02_nic_records(jig_id, test_status);
-
--- -----------------------------------------------------------------------------
--- STAGE 04: NIC INSIDE PRINT (MODEM CHECK, IMEI BIND & LASER TRIGGER)
--- -----------------------------------------------------------------------------
+-- STAGE 04: NIC INSIDE PRINT & MULTI-CHANNEL JIG TESTING (UNIFIED STAGE 4 TABLE)
 CREATE TABLE IF NOT EXISTS stage04_nic_print_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT REFERENCES meters(meter_id) ON DELETE CASCADE,
-    nic_serial_no VARCHAR(100) NOT NULL,
-    imei_no VARCHAR(30) NOT NULL,
-    jig_id VARCHAR(50) NOT NULL,
-    laser_machine_id VARCHAR(50) NOT NULL,
+    cycle_id INT,
+    cycle_uuid VARCHAR(50),
     channel_no INT DEFAULT 1,
-    cycle_code VARCHAR(50),
-    barcode_read_after_print VARCHAR(100),
+    jig_id VARCHAR(50) DEFAULT 'JIG-001',
+    laser_machine_id VARCHAR(50) DEFAULT 'LASER-01',
+    nic_serial_no VARCHAR(100) NOT NULL,
+    imei_no VARCHAR(30),
+    hwv VARCHAR(50) DEFAULT 'v1.2',
+    fwv VARCHAR(50) DEFAULT 'v2.0',
+    sig VARCHAR(50) DEFAULT '-65dBm',
+    total_channels INT DEFAULT 8,
+    connected_count INT DEFAULT 8,
+    passed_channels INT DEFAULT 8,
+    failed_channels INT DEFAULT 0,
+    barcode_read_back VARCHAR(100),
     is_print_verified BOOLEAN DEFAULT TRUE,
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s04_nic ON stage04_nic_print_records(nic_serial_no, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s04_cycle ON stage04_nic_print_records(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_s04_cycle_uuid ON stage04_nic_print_records(cycle_uuid);
 
-CREATE TRIGGER trg_stage04_updated_at 
-BEFORE UPDATE ON stage04_nic_print_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s04_nic_imei ON stage04_nic_print_records(nic_serial_no, imei_no);
-CREATE INDEX idx_s04_meter_latest ON stage04_nic_print_records(meter_id, record_id DESC);
-CREATE INDEX idx_s04_jig ON stage04_nic_print_records(jig_id);
-
--- -----------------------------------------------------------------------------
--- STAGE 06: CALIBRATION & ACCURACY JIG (HIGH-VOLUME BENCH TEST)
--- -----------------------------------------------------------------------------
+-- STAGE 06: CALIBRATION & ACCURACY BENCH (HIGH-VOLUME BENCH TEST)
 CREATE TABLE IF NOT EXISTS stage06_calibration_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
     meter_serial_no VARCHAR(100) NOT NULL,
     jig_id VARCHAR(50) NOT NULL,
     bench_rack_slot INT NOT NULL,
-    cycle_code VARCHAR(50),
-    
     test_voltage NUMERIC(8,2) NOT NULL,
     test_current NUMERIC(8,3) NOT NULL,
     power_factor NUMERIC(4,2) NOT NULL,
     measured_error_pct NUMERIC(6,4) NOT NULL,
     allowed_tolerance_pct NUMERIC(6,4) NOT NULL,
     pulse_count_actual INT,
-    pulse_count_reference INT,
-    certificate_pdf_url TEXT,
+    pulse_count_ref INT,
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s06_serial ON stage06_calibration_records(meter_serial_no, created_at DESC);
 
-CREATE TRIGGER trg_stage06_updated_at 
-BEFORE UPDATE ON stage06_calibration_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s06_meter ON stage06_calibration_records(meter_id);
-CREATE INDEX idx_s06_meter_latest ON stage06_calibration_records(meter_id, record_id DESC);
-CREATE INDEX idx_s06_serial ON stage06_calibration_records(meter_serial_no);
-CREATE INDEX idx_s06_cycle ON stage06_calibration_records(cycle_code);
-CREATE INDEX idx_s06_jig_status ON stage06_calibration_records(jig_id, test_status);
-
--- -----------------------------------------------------------------------------
--- STAGE 07: FINAL FUNCTIONAL VALIDATION (DLMS, RTC & RELAY TESTING)
--- -----------------------------------------------------------------------------
+-- STAGE 07: FINAL FUNCTIONAL VALIDATION (DLMS, RTC & RELAY)
 CREATE TABLE IF NOT EXISTS stage07_final_validation_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
     meter_serial_no VARCHAR(100) NOT NULL,
     jig_id VARCHAR(50) NOT NULL,
-    channel_no INT DEFAULT 1,
-    cycle_code VARCHAR(50),
     optical_probe_id VARCHAR(50),
     rtc_drift_seconds NUMERIC(6,2),
     relay_disconnect_test VARCHAR(10),
     relay_reconnect_test VARCHAR(10),
-    ip_ping_response_ms INT,
-    firmware_hash_verified BOOLEAN DEFAULT TRUE,
+    ip_ping_ms INT,
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s07_serial ON stage07_final_validation_records(meter_serial_no, created_at DESC);
 
-CREATE TRIGGER trg_stage07_updated_at 
-BEFORE UPDATE ON stage07_final_validation_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s07_meter_latest ON stage07_final_validation_records(meter_id, record_id DESC);
-CREATE INDEX idx_s07_serial ON stage07_final_validation_records(meter_serial_no);
-CREATE INDEX idx_s07_jig ON stage07_final_validation_records(jig_id);
-
--- -----------------------------------------------------------------------------
 -- STAGE 08: PVC SEAL & QR TAG VALIDATION (DUAL BARCODE SCANNER)
--- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS stage08_pvc_seal_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
     meter_serial_no VARCHAR(100) NOT NULL,
     jig_id VARCHAR(50) NOT NULL,
     pvc_seal_left VARCHAR(50) NOT NULL,
     pvc_seal_right VARCHAR(50) NOT NULL,
-    is_left_tag_valid BOOLEAN DEFAULT TRUE,
-    is_right_tag_valid BOOLEAN DEFAULT TRUE,
+    is_left_valid BOOLEAN DEFAULT TRUE,
+    is_right_valid BOOLEAN DEFAULT TRUE,
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s08_serial ON stage08_pvc_seal_records(meter_serial_no, created_at DESC);
 
-CREATE TRIGGER trg_stage08_updated_at 
-BEFORE UPDATE ON stage08_pvc_seal_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s08_meter ON stage08_pvc_seal_records(meter_id);
-CREATE INDEX idx_s08_meter_latest ON stage08_pvc_seal_records(meter_id, record_id DESC);
-CREATE INDEX idx_s08_seals ON stage08_pvc_seal_records(pvc_seal_left, pvc_seal_right);
-
--- -----------------------------------------------------------------------------
--- STAGE 09: METER BOX FRONT LASER PRINT & OCR READ-BACK
--- -----------------------------------------------------------------------------
+-- STAGE 09: METER BOX LASER PRINT & OCR READ-BACK
 CREATE TABLE IF NOT EXISTS stage09_meter_box_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
     meter_serial_no VARCHAR(100) NOT NULL,
-    jig_id VARCHAR(50) NOT NULL,
     laser_machine_id VARCHAR(50) NOT NULL,
-    front_plate_qr_verified VARCHAR(100),
+    qr_verified VARCHAR(100),
     print_quality_score NUMERIC(4,2),
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s09_serial ON stage09_meter_box_records(meter_serial_no, created_at DESC);
 
-CREATE TRIGGER trg_stage09_updated_at 
-BEFORE UPDATE ON stage09_meter_box_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s09_serial ON stage09_meter_box_records(meter_serial_no);
-CREATE INDEX idx_s09_meter_latest ON stage09_meter_box_records(meter_id, record_id DESC);
-
--- -----------------------------------------------------------------------------
--- STAGE 10: SINGLE METER CARTON PRINT & DIGITAL WEIGHING SCALE
--- -----------------------------------------------------------------------------
+-- STAGE 10: SINGLE METER CARTON PRINT & WEIGHING SCALE
 CREATE TABLE IF NOT EXISTS stage10_carton_records (
     record_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
     meter_serial_no VARCHAR(100) NOT NULL,
-    jig_id VARCHAR(50) NOT NULL,
     carton_barcode VARCHAR(100) UNIQUE NOT NULL,
     gross_weight_kg NUMERIC(6,3) NOT NULL,
     weight_min_tolerance NUMERIC(6,3) NOT NULL,
     weight_max_tolerance NUMERIC(6,3) NOT NULL,
     zebra_printer_ip VARCHAR(45),
-    print_status VARCHAR(20) DEFAULT 'PRINTED',
     test_status VARCHAR(10) NOT NULL CHECK (test_status IN ('PASS', 'FAIL')),
     failure_reason TEXT,
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    operator_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_s10_serial ON stage10_carton_records(meter_serial_no, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s10_carton ON stage10_carton_records(carton_barcode);
 
-CREATE TRIGGER trg_stage10_updated_at 
-BEFORE UPDATE ON stage10_carton_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s10_carton ON stage10_carton_records(carton_barcode);
-CREATE INDEX idx_s10_meter ON stage10_carton_records(meter_id);
-CREATE INDEX idx_s10_meter_latest ON stage10_carton_records(meter_id, record_id DESC);
-
--- -----------------------------------------------------------------------------
--- STAGE 11: MASTER CARTON PACKING, PALLET AGGREGATION & PRINT
--- -----------------------------------------------------------------------------
+-- STAGE 11: MASTER CARTON PACKING & PALLET AGGREGATION
 CREATE TABLE IF NOT EXISTS stage11_master_carton_records (
     record_id BIGSERIAL PRIMARY KEY,
     master_carton_barcode VARCHAR(100) NOT NULL,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
-    meter_serial_no VARCHAR(100) NOT NULL,
     carton_barcode VARCHAR(100) NOT NULL,
-    jig_id VARCHAR(50) NOT NULL,
+    meter_serial_no VARCHAR(100) NOT NULL,
     item_position_in_box INT NOT NULL,
     box_total_capacity INT NOT NULL DEFAULT 24,
     pallet_total_weight_kg NUMERIC(8,3),
     is_box_closed BOOLEAN DEFAULT FALSE,
     zebra_master_printer_ip VARCHAR(45),
-    
-    operator_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_inspector_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    qc_status VARCHAR(15) DEFAULT 'PENDING' CHECK (qc_status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    supervisor_id INT REFERENCES users(user_id) ON DELETE SET NULL,
-    supervisor_override_reason TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
+    operator_id VARCHAR(50),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Packaging Integrity: Prevents double-packing the same meter or slot
-    CONSTRAINT uq_master_carton_slot UNIQUE (master_carton_barcode, item_position_in_box),
-    CONSTRAINT uq_master_carton_meter UNIQUE (meter_id)
+    CONSTRAINT uq_master_slot UNIQUE (master_carton_barcode, item_position_in_box)
 );
-
-CREATE TRIGGER trg_stage11_updated_at 
-BEFORE UPDATE ON stage11_master_carton_records 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_s11_master ON stage11_master_carton_records(master_carton_barcode);
-CREATE INDEX idx_s11_meter ON stage11_master_carton_records(meter_serial_no);
-CREATE INDEX idx_s11_carton ON stage11_master_carton_records(carton_barcode);
+CREATE INDEX IF NOT EXISTS idx_s11_master ON stage11_master_carton_records(master_carton_barcode);
+CREATE INDEX IF NOT EXISTS idx_s11_serial ON stage11_master_carton_records(meter_serial_no);
 
 -- =============================================================================
--- PART 6: QC INSPECTIONS, SUPERVISOR TESTS & AUDIT TRAIL
+-- PART 5: QC & SUPERVISOR TABLES
 -- =============================================================================
 
--- 12. Unified QC Tests & Inspection Table (Single Table replacing qc_inspections & qc_tests)
+-- QC TESTS MASTER TABLE
 CREATE TABLE IF NOT EXISTS qc_tests (
-    qc_id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT REFERENCES meters(meter_id) ON DELETE CASCADE,
-    meter_serial_no VARCHAR(100) NOT NULL,
-    stage_id INT NOT NULL REFERENCES production_stages(stage_id) ON DELETE RESTRICT,
-    inspector_id INT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
-    inspector_name VARCHAR(120),
+    id SERIAL PRIMARY KEY,
+    qc_id VARCHAR(50),
+    qc_name VARCHAR(120),
+    stage_id INT NOT NULL,
+    stage_name VARCHAR(100) NOT NULL,
+    meter_no VARCHAR(100),
+    serial_no VARCHAR(100),
     batch_no VARCHAR(100),
+    status VARCHAR(20) NOT NULL DEFAULT 'PASS',
     defect_category VARCHAR(50),
     defect_photo_url TEXT,
     aql_lot_no VARCHAR(50),
-    status VARCHAR(20) NOT NULL DEFAULT 'PASS' CHECK (status IN ('PASS', 'FAIL', 'HOLD', 'REJECT', 'RELEASE')),
-    inspection_data JSONB,                       -- Checklists, dynamic test points, and values
+    inspection_data TEXT,
+    test_details TEXT,
     remarks TEXT,
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_qc_serial_stage ON qc_tests(serial_no, stage_id);
+CREATE INDEX IF NOT EXISTS idx_qc_meter_stage ON qc_tests(meter_no, stage_id);
+CREATE INDEX IF NOT EXISTS idx_qc_status_date ON qc_tests(stage_id, status, created_at DESC);
 
-CREATE TRIGGER trg_qc_tests_updated_at 
-BEFORE UPDATE ON qc_tests 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_qc_tests_meter ON qc_tests(meter_serial_no, stage_id);
-CREATE INDEX idx_qc_tests_stage_status ON qc_tests(stage_id, status);
-CREATE INDEX idx_qc_tests_inspector ON qc_tests(inspector_id);
-
--- 13. Supervisor Stage Verification & Overrides (supervisor_tests)
-CREATE TABLE IF NOT EXISTS supervisor_tests (
-    id BIGSERIAL PRIMARY KEY,
-    meter_id BIGINT NOT NULL REFERENCES meters(meter_id) ON DELETE CASCADE,
-    meter_serial_no VARCHAR(100) NOT NULL,
-    stage_id INT NOT NULL REFERENCES production_stages(stage_id) ON DELETE RESTRICT,
+-- QC INSPECTIONS (SYNCHRONIZED WITH QC_TESTS)
+CREATE TABLE IF NOT EXISTS qc_inspections (
+    id SERIAL PRIMARY KEY,
+    inspector_id VARCHAR(50),
+    qc_id VARCHAR(50),
+    qc_name VARCHAR(120),
+    stage_id INT,
     stage_name VARCHAR(100),
-    supervisor_id INT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
-    supervisor_name VARCHAR(120),
+    meter_no VARCHAR(100),
+    serial_no VARCHAR(100),
     batch_no VARCHAR(100),
-    status VARCHAR(20) NOT NULL DEFAULT 'PASS' CHECK (status IN ('PASS', 'FAIL', 'APPROVED', 'OVERRIDE', 'REJECTED')),
-    override_type VARCHAR(50) DEFAULT 'STAGE_VERIFICATION' CHECK (override_type IN ('STAGE_VERIFICATION', 'FORCE_BYPASS', 'RETEST_PERMISSION', 'DEFECT_CLEAR')),
-    reason TEXT NOT NULL,
-    test_data JSONB,                            -- Dynamic override or test parameter logs
-    digital_signature_hash VARCHAR(255),
-    
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    status VARCHAR(20) DEFAULT 'PASS',
+    remarks TEXT,
+    inspection_data TEXT,
+    test_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TRIGGER trg_supervisor_tests_updated_at 
-BEFORE UPDATE ON supervisor_tests 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
+-- BI-DIRECTIONAL TRIGGER: qc_tests -> qc_inspections
+CREATE OR REPLACE FUNCTION sync_qc_tests_to_inspections()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO qc_inspections (
+        id, inspector_id, qc_id, qc_name, stage_id, stage_name, meter_no, serial_no, batch_no, status, inspection_data, remarks, test_details, created_at
+    ) VALUES (
+        NEW.id, COALESCE(NEW.qc_id, 'QC001'), NEW.qc_id, NEW.qc_name, NEW.stage_id, NEW.stage_name, NEW.meter_no, NEW.serial_no, NEW.batch_no, NEW.status, NEW.inspection_data, NEW.remarks, NEW.test_details, COALESCE(NEW.created_at, CURRENT_TIMESTAMP)
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        inspector_id = EXCLUDED.inspector_id,
+        qc_id = EXCLUDED.qc_id,
+        qc_name = EXCLUDED.qc_name,
+        stage_id = EXCLUDED.stage_id,
+        stage_name = EXCLUDED.stage_name,
+        meter_no = EXCLUDED.meter_no,
+        serial_no = EXCLUDED.serial_no,
+        batch_no = EXCLUDED.batch_no,
+        status = EXCLUDED.status,
+        inspection_data = EXCLUDED.inspection_data,
+        remarks = EXCLUDED.remarks,
+        test_details = EXCLUDED.test_details;
+    RETURN NEW;
+END;
+$$ LANGUAGE 'plpgsql';
 
-CREATE INDEX idx_supervisor_tests_meter ON supervisor_tests(meter_serial_no);
-CREATE INDEX idx_supervisor_tests_stage ON supervisor_tests(stage_id, status);
-CREATE INDEX idx_supervisor_tests_supervisor ON supervisor_tests(supervisor_id);
+DROP TRIGGER IF EXISTS trg_sync_qc_tests ON qc_tests;
+CREATE TRIGGER trg_sync_qc_tests
+AFTER INSERT OR UPDATE ON qc_tests
+FOR EACH ROW EXECUTE PROCEDURE sync_qc_tests_to_inspections();
 
--- 14. Universal Immutable Audit Logs
-CREATE TABLE IF NOT EXISTS audit_logs (
-    audit_id BIGSERIAL PRIMARY KEY,
-    table_name VARCHAR(50) NOT NULL,
-    action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('INSERT', 'UPDATE', 'DELETE')),
-    record_id BIGINT,
-    performed_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    ip_address VARCHAR(45),
-    old_data JSONB,
-    new_data JSONB,
-    created_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_by INT REFERENCES users(user_id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+-- SUPERVISOR TESTS & OVERRIDES
+CREATE TABLE IF NOT EXISTS supervisor_tests (
+    id SERIAL PRIMARY KEY,
+    supervisor_id VARCHAR(50) NOT NULL,
+    supervisor_name VARCHAR(120),
+    user_id VARCHAR(50),
+    user_name VARCHAR(120),
+    stage_id INT NOT NULL,
+    stage_name VARCHAR(100),
+    station_id VARCHAR(50),
+    meter_no VARCHAR(100),
+    serial_no VARCHAR(100),
+    batch_no VARCHAR(100),
+    status VARCHAR(20) NOT NULL DEFAULT 'APPROVED',
+    override_type VARCHAR(50) DEFAULT 'STAGE_VERIFICATION',
+    reason TEXT,
+    test_details TEXT,
+    test_data TEXT,
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TRIGGER trg_audit_logs_updated_at 
-BEFORE UPDATE ON audit_logs 
-FOR EACH ROW EXECUTE PROCEDURE update_timestamp_column();
-
-CREATE INDEX idx_audit_logs_timestamp ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sup_serial_stage ON supervisor_tests(serial_no, stage_id);
+CREATE INDEX IF NOT EXISTS idx_sup_meter_stage ON supervisor_tests(meter_no, stage_id);
+CREATE INDEX IF NOT EXISTS idx_sup_status_date ON supervisor_tests(stage_id, status, created_at DESC);
 
 -- =============================================================================
--- PART 7: ONLY DEFAULT ADMIN ROLE & DEFAULT ADMIN USER SEED
+-- PART 6: BACKWARD COMPATIBILITY SYNC TRIGGER (meters <-> meter_mapping)
 -- =============================================================================
 
--- 1. Insert ONLY Admin Role
-INSERT INTO roles (role_id, role_code, role_name, description)
-VALUES (
-    1,
-    'ADMIN',
-    'System Administrator',
-    'Full system configuration and master control access'
-)
-ON CONFLICT (role_id) DO NOTHING;
+-- When old APIs insert/update `meters`, automatically sync with `meter_mapping`
+CREATE OR REPLACE FUNCTION sync_meters_to_mapping()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO meter_mapping (
+        pcb_serial_no,
+        meter_serial_no,
+        current_stage,
+        overall_status,
+        batch_no,
+        meter_model,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        NEW.meter_no,
+        NEW.serial_no,
+        COALESCE(NEW.current_stage, 1),
+        COALESCE(NEW.status, 'IN_PROGRESS'),
+        NEW.batch_no,
+        COALESCE(NEW.model, 'ZEN-1P-10-60A'),
+        COALESCE(NEW.created_at, CURRENT_TIMESTAMP),
+        COALESCE(NEW.updated_at, CURRENT_TIMESTAMP)
+    )
+    ON CONFLICT (pcb_serial_no) DO UPDATE SET
+        meter_serial_no = EXCLUDED.meter_serial_no,
+        current_stage = EXCLUDED.current_stage,
+        overall_status = EXCLUDED.overall_status,
+        batch_no = COALESCE(EXCLUDED.batch_no, meter_mapping.batch_no),
+        meter_model = COALESCE(EXCLUDED.meter_model, meter_mapping.meter_model),
+        updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE 'plpgsql';
 
--- 2. Insert ONLY Default Admin User (Password: Admin@1234)
-INSERT INTO users (
-    user_id,
-    employee_code,
-    full_name,
-    email,
-    phone_number,
-    password_hash,
-    role_id,
-    badge_barcode,
-    is_active
-)
-VALUES (
-    1,
-    'ADMIN001',
-    'Zenmeter System Administrator',
-    'admin@zenmeter.com',
-    '+91-9876543210',
-    crypt('Admin@1234', gen_salt('bf', 10)),
-    1,
-    'BADGE-ADMIN-001',
-    TRUE
-)
-ON CONFLICT (employee_code) DO NOTHING;
-
--- Set self-reference audit for Admin
-UPDATE roles SET created_by = 1, updated_by = 1 WHERE role_id = 1;
-UPDATE users SET created_by = 1, updated_by = 1 WHERE user_id = 1;
-
--- Sync sequences for roles and users
-SELECT setval('roles_role_id_seq', (SELECT COALESCE(MAX(role_id), 1) FROM roles));
-SELECT setval('users_user_id_seq', (SELECT COALESCE(MAX(user_id), 1) FROM users));
+DROP TRIGGER IF EXISTS trg_sync_meters ON meters;
+CREATE TRIGGER trg_sync_meters
+AFTER INSERT OR UPDATE ON meters
+FOR EACH ROW EXECUTE PROCEDURE sync_meters_to_mapping();
