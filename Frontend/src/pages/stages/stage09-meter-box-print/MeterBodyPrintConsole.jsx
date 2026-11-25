@@ -387,6 +387,8 @@ export default function MeterBodyPrintConsole({
   const [pairedPorts, setPairedPorts] = useState([]);
   const [selectedPortId, setSelectedPortId] = useState('');
   const manualDisconnectedRef = useRef(false);
+  const opticalMissingCountRef = useRef(0);
+  const laserMissingCountRef = useRef(0);
   const opticalStatusRef = useRef(opticalStatus);
   opticalStatusRef.current = opticalStatus;
   const selectedOpticalPortRef = useRef(selectedOpticalPort);
@@ -577,8 +579,9 @@ export default function MeterBodyPrintConsole({
     return list;
   }, [availableLaserPorts, pairedLaserPorts, opticalStatus.connected, opticalStatus.port]);
 
-  // Keep Optical dropdown selection pointing to a valid detected port
+  // Keep Optical dropdown selection pointing to a valid detected port when disconnected
   useEffect(() => {
+    if (opticalStatus.connected) return;
     const valid = opticalPortOptions.filter(o => !o.isTaken);
     const currentMatches = valid.some(o => o.id === selectedPortId);
     if (!currentMatches && selectedPortId !== '__pair_new__') {
@@ -590,10 +593,11 @@ export default function MeterBodyPrintConsole({
         setSelectedOpticalPort('');
       }
     }
-  }, [opticalPortOptions, selectedPortId]);
+  }, [opticalPortOptions, selectedPortId, opticalStatus.connected]);
 
-  // Keep Laser dropdown selection pointing to a valid detected port
+  // Keep Laser dropdown selection pointing to a valid detected port when disconnected
   useEffect(() => {
+    if (laserStatus.connected) return;
     const valid = laserPortOptions.filter(o => !o.isTaken);
     const currentMatches = valid.some(o => o.id === selectedLaserPortId);
     if (!currentMatches && selectedLaserPortId !== '__laser_pair_new__') {
@@ -605,7 +609,7 @@ export default function MeterBodyPrintConsole({
         setSelectedLaserPort('');
       }
     }
-  }, [laserPortOptions, selectedLaserPortId]);
+  }, [laserPortOptions, selectedLaserPortId, laserStatus.connected]);
 
   // Direct connect handler for Optical Port
   const handleDirectConnectOptical = async () => {
@@ -1435,18 +1439,6 @@ export default function MeterBodyPrintConsole({
       setOpticalStatus(prev => ({ ...prev, checking: false }));
       if (!isSilent) {
         setShowInsecureHelpModal(true);
-      }
-      return false;
-    }
-
-    const isRemoteLaptop = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    if (isRemoteLaptop) {
-      setOpticalStatus(prev => ({ ...prev, connected: false, checking: false }));
-      if (!isSilent) {
-        showErrorAlert(
-          'Connect Cable to This Laptop',
-          'Please plug the USB Cable directly into this laptop. Server-attached cables cannot be accessed from remote workstations.'
-        );
       }
       return false;
     }
@@ -2546,7 +2538,7 @@ export default function MeterBodyPrintConsole({
         wasOpticalConnected = localStorage.getItem('zenmeter_optical_was_connected') === 'true';
         opticalManualDisconnect = localStorage.getItem('zenmeter_optical_manual_disconnect') === 'true';
         lastOpticalPort = localStorage.getItem('zenmeter_optical_last_port');
-        lastOpticalSource = localStorage.getItem('zenmeter_optical_source') || 'client_webserial';
+        lastOpticalSource = localStorage.getItem('zenmeter_optical_source') || 'server';
         if (lastOpticalPort && isDummyPortName(lastOpticalPort)) {
           lastOpticalPort = null;
         }
@@ -2554,16 +2546,17 @@ export default function MeterBodyPrintConsole({
 
       // Query server status
       let detectedServerPorts = [];
-      let isServer = isServerMachine;
+      let isServer = true;
+      let optStatusRes = null;
       try {
-        const res = await stage09Service.getOpticalStatus();
-        if (res?.isServerMachine !== undefined) {
-          isServer = res.isServerMachine;
-          if (isMounted) setIsServerMachine(res.isServerMachine);
+        optStatusRes = await stage09Service.getOpticalStatus({ allow_server_port: 'true' });
+        if (optStatusRes?.isServerMachine !== undefined) {
+          isServer = optStatusRes.isServerMachine;
+          if (isMounted) setIsServerMachine(optStatusRes.isServerMachine);
         }
 
-        detectedServerPorts = (res && Array.isArray(res.ports))
-          ? res.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
+        detectedServerPorts = (optStatusRes && Array.isArray(optStatusRes.ports))
+          ? optStatusRes.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
           : [];
         if (isMounted && detectedServerPorts.length > 0) {
           setAvailableOpticalPorts(detectedServerPorts);
@@ -2572,63 +2565,62 @@ export default function MeterBodyPrintConsole({
         console.warn('[Serial] Port scan error on mount:', e.message);
       }
 
-      // Reconnect Optical Port if not manually disconnected
+      // Check if backend already has active Optical connection
+      const isBackendOpticalOpen = Boolean(optStatusRes && optStatusRes.connected && optStatusRes.port);
       const targetOptKey = lastOpticalPort ? extractPortKey(lastOpticalPort).toLowerCase() : '';
       const optIsPhysicallyPresent = Boolean(targetOptKey && detectedServerPorts.some(p => extractPortKey(p.path).toLowerCase() === targetOptKey || extractPortKey(p.friendlyName || '').toLowerCase() === targetOptKey));
-      const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || Boolean(lastOpticalPort) || (pairedList && pairedList.length > 0));
-      if (shouldConnectOptical && isMounted) {
-        if (!isServer || lastOpticalSource === 'client_webserial' || (!lastOpticalPort && pairedList && pairedList.length > 0)) {
-          if (pairedList && pairedList.length > 0) {
-            try {
-              const matchingPort = (lastOpticalPort && pairedList.find(p => p.friendlyName === lastOpticalPort)) || pairedList[0];
-              const eff = getEffectiveSerialConfig(usbSerialConfig);
-              await webSerialService.connectPort(matchingPort.port, currentOperatorId, eff);
-            } catch (webErr) {
-              console.warn('[WebSerial] Reconnection error on reload:', webErr);
-              if (isMounted) setOpticalStatus(prev => ({ ...prev, checking: false }));
-            }
-          } else if (isMounted) {
-            setOpticalStatus(prev => ({ ...prev, checking: false }));
-          }
-        } else if (lastOpticalPort && isMounted && isServer) {
-          if (optIsPhysicallyPresent && detectedServerPorts.length > 0) {
-            await handleConnectServerPort(lastOpticalPort, true);
-          } else {
-            setOpticalStatus(prev => ({ ...prev, connected: false, port: null, friendlyName: null, checking: false }));
-            try { localStorage.setItem('zenmeter_optical_was_connected', 'false'); } catch (_) { }
+      const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || Boolean(lastOpticalPort));
+
+      if (isBackendOpticalOpen && isMounted) {
+        // 1. Backend already connected -> restore connection immediately without dropping or moving location
+        const summary = formatSerialSummary(usbSerialConfig);
+        const activePort = optStatusRes.port ? (extractPortKey(optStatusRes.port) || optStatusRes.port) : (lastOpticalPort || 'COM4');
+        setOpticalStatus({
+          connected: true,
+          port: activePort,
+          friendlyName: optStatusRes.friendlyName || `${activePort} (${summary})`,
+          baudRate: optStatusRes.baudRate || 9600,
+          ports: detectedServerPorts,
+          source: 'server',
+          tunnelId: null,
+          checking: false
+        });
+        setSelectedOpticalPort(activePort);
+        setSelectedPortId(`server_${activePort}`);
+        try {
+          localStorage.setItem('zenmeter_optical_was_connected', 'true');
+          localStorage.setItem('zenmeter_optical_last_port', activePort);
+          localStorage.setItem('zenmeter_optical_source', 'server');
+          localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
+        } catch (_) { }
+      } else if (shouldConnectOptical && isMounted) {
+        // 2. Reconnect to same port if physically present
+        if (lastOpticalPort && optIsPhysicallyPresent && detectedServerPorts.length > 0) {
+          await handleConnectServerPort(lastOpticalPort, true);
+        } else {
+          setOpticalStatus(prev => ({ ...prev, connected: false, port: null, friendlyName: null, checking: false }));
+          try { localStorage.setItem('zenmeter_optical_was_connected', 'false'); } catch (_) { }
+          if (detectedServerPorts.length > 0) {
+            setSelectedPortId(`server_${detectedServerPorts[0].path}`);
+            setSelectedOpticalPort(detectedServerPorts[0].path);
           }
         }
       } else if (isMounted) {
-        if (isServer) {
-          setOpticalStatus(prev => ({
-            ...prev,
-            connected: false,
-            ports: detectedServerPorts,
-            checking: false
-          }));
+        // 3. Keep selected location locked to last saved port or first detected port
+        setOpticalStatus(prev => ({
+          ...prev,
+          connected: false,
+          ports: detectedServerPorts,
+          checking: false
+        }));
 
-          if (detectedServerPorts.length > 0) {
-            let savedPort = lastOpticalPort && !isDummyPortName(lastOpticalPort) ? lastOpticalPort : null;
-            const matchedPort = savedPort && detectedServerPorts.find(p => p.path && p.path.toLowerCase() === savedPort.toLowerCase());
-            const targetPort = matchedPort ? matchedPort.path : detectedServerPorts[0].path;
-            if (targetPort) {
-              setSelectedPortId(`server_${targetPort}`);
-              setSelectedOpticalPort(targetPort);
-            }
-          }
-        } else {
-          setOpticalStatus(prev => ({
-            ...prev,
-            connected: false,
-            ports: pairedList,
-            checking: false
-          }));
-          if (pairedList && pairedList.length > 0) {
-            setSelectedPortId('paired_0');
-            setSelectedOpticalPort(pairedList[0].friendlyName);
-          } else {
-            setSelectedPortId('__pair_new__');
-            setSelectedOpticalPort('');
+        if (detectedServerPorts.length > 0) {
+          let savedPort = lastOpticalPort && !isDummyPortName(lastOpticalPort) ? lastOpticalPort : null;
+          const matchedPort = savedPort && detectedServerPorts.find(p => p.path && p.path.toLowerCase() === savedPort.toLowerCase());
+          const targetPort = matchedPort ? matchedPort.path : detectedServerPorts[0].path;
+          if (targetPort) {
+            setSelectedPortId(`server_${targetPort}`);
+            setSelectedOpticalPort(targetPort);
           }
         }
       }
@@ -2747,6 +2739,12 @@ export default function MeterBodyPrintConsole({
           } else if (isMounted) {
             setLaserStatus(prev => ({ ...prev, connected: false, port: null, friendlyName: null, checking: false }));
             try { localStorage.setItem('zenmeter_laser_was_connected', 'false'); } catch (_) { }
+            if (detLaserPorts.length > 0) {
+              const savedLaser = lastLaserPort && detLaserPorts.find(p => p.path && p.path.toLowerCase() === lastLaserPort.toLowerCase());
+              const targetLaser = savedLaser ? savedLaser.path : detLaserPorts[0].path;
+              setSelectedLaserPortId(`laser_server_${targetLaser}`);
+              setSelectedLaserPort(targetLaser);
+            }
           }
         } else if (isMounted) {
           // Remote laptop: hide server ports!
@@ -2836,8 +2834,14 @@ export default function MeterBodyPrintConsole({
             const fKey = extractPortKey(p.friendlyName || '').toLowerCase();
             return pPath === connectedPath || (cleanKey && (pKey === cleanKey || fKey === cleanKey));
           });
-          if (!stillPresent && currentPorts.length > 0) {
-            await handleHardwareDisconnection(`Optical Port (${currentStatus.port || 'COM Port'}) physically unplugged from system.`, false);
+          if (!stillPresent) {
+            opticalMissingCountRef.current = (opticalMissingCountRef.current || 0) + 1;
+            if (opticalMissingCountRef.current >= 2) {
+              await handleHardwareDisconnection(`Optical Port (${currentStatus.port || 'COM Port'}) physically unplugged from system.`, false);
+              opticalMissingCountRef.current = 0;
+            }
+          } else {
+            opticalMissingCountRef.current = 0;
           }
         }
 
@@ -2878,7 +2882,8 @@ export default function MeterBodyPrintConsole({
         if (isServerMachine || currentLaser.source === 'server') {
           const lRes = await stage09Service.getLaserStatus({
             deviceId: webSerialService.deviceId,
-            tunnelId: opticalStatusRef.current?.tunnelId || ''
+            tunnelId: opticalStatusRef.current?.tunnelId || '',
+            allow_server_port: 'true'
           });
           if (isMounted) {
             const detLaser = (lRes && Array.isArray(lRes.ports)) ? lRes.ports : [];
@@ -2893,9 +2898,15 @@ export default function MeterBodyPrintConsole({
                 const fKey = extractPortKey(p.friendlyName || '').toLowerCase();
                 return pPath === connectedLaserPath || (cleanLaserKey && (pKey === cleanLaserKey || fKey === cleanLaserKey));
               });
-              if (!laserStillPresent && detLaser.length > 0) {
-                // Laser cable physically unplugged from system
-                await handleHardwareLaserDisconnection(`Laser Port (${currentLaser.port || 'COM Port'}) physically unplugged from system.`);
+              if (!laserStillPresent) {
+                laserMissingCountRef.current = (laserMissingCountRef.current || 0) + 1;
+                if (laserMissingCountRef.current >= 2) {
+                  // Laser cable physically unplugged from system
+                  await handleHardwareLaserDisconnection(`Laser Port (${currentLaser.port || 'COM Port'}) physically unplugged from system.`);
+                  laserMissingCountRef.current = 0;
+                }
+              } else {
+                laserMissingCountRef.current = 0;
               }
             } else if (currentLaser.checking) {
               setLaserStatus(prev => ({ ...prev, checking: false }));

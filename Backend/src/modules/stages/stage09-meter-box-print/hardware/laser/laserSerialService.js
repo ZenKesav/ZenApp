@@ -164,6 +164,20 @@ class LaserSerialService {
       };
     }
 
+    // Mutual exclusion check: Check if DlmsOpticalService is currently using this port
+    try {
+      const DlmsOpticalService = require('../dlms/dlmsOpticalService');
+      if (DlmsOpticalService && DlmsOpticalService.isPortInUse(cleanPath)) {
+        return {
+          success: false,
+          connected: false,
+          port: cleanPath,
+          ports: availablePorts,
+          message: `Port ${cleanPath} is currently connected to Optical Port. Please select a different COM port or disconnect Optical Port first.`
+        };
+      }
+    } catch (_) { }
+
     // Disconnect any existing port
     await this.disconnectPort();
 

@@ -46,21 +46,7 @@ const Stage09Controller = {
         return res.status(200).json({ success: true, isServerMachine: false, ...result });
       }
 
-      // 2. Strict isolation: Remote operator laptops must NEVER see server COM ports or server status
-      if (!isLocalhost || deviceId) {
-        return res.status(200).json({
-          success: true,
-          isServerMachine: false,
-          connected: false,
-          port: null,
-          friendlyName: null,
-          ports: [],
-          source: 'client_webserial',
-          message: 'No optical cable connected to this workstation.'
-        });
-      }
-
-      // 3. Local server machine physical check
+      // 2. Physical server COM port check
       const result = await Stage09Service.checkOpticalCable({
         isLocalhost: true,
         allowServerPort: true
@@ -323,24 +309,8 @@ const Stage09Controller = {
   async checkLaserStatus(req, res, next) {
     try {
       const { deviceId, tunnelId } = req.query || {};
-      const isLocalhost = isRequestFromLocalServer(req);
-
-      // Strict isolation: Remote operator laptops must NEVER see server COM ports or server status
-      if (!isLocalhost || deviceId) {
-        return res.status(200).json({
-          success: true,
-          isServerMachine: false,
-          connected: false,
-          port: null,
-          friendlyName: null,
-          ports: [],
-          source: 'client_webserial',
-          message: 'Laser Machine Serial COM Port is disconnected on this workstation.'
-        });
-      }
-
       const result = await Stage09Service.checkLaserStatus({ deviceId, tunnelId });
-      return res.status(200).json({ success: true, isServerMachine: isLocalhost, ...result });
+      return res.status(200).json({ success: true, isServerMachine: true, ...result });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
     }

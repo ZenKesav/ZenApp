@@ -63,16 +63,37 @@ const Stage08Service = {
     if (!meterNo) {
       throw new Error('meter_no or meter_serial is required');
     }
-    const sealBarcode = data.seal_barcode || data.seal_no || `SEAL-${meterNo}`;
+    const formId = data.form_id || data.work_id || null;
+    const sealBarcode = data.seal_barcode || data.meterLeftSeal1 || data.seal_no || `SEAL-${meterNo}`;
     const status = data.status === 'FAIL' ? 'FAIL' : 'PASS';
 
-    const result = await StageEngineService.runStage(meterNo, 8, operatorId, stationId, status);
+    const result = await StageEngineService.runStage(meterNo, 8, operatorId, stationId, status, {
+      measurements: data.seals || data
+    });
+
+    let completedCount = null;
+    if (formId) {
+      try {
+        const { query } = require('../../../core/database/connection');
+        await query.run(
+          `UPDATE stage_work_forms SET completed_quantity = COALESCE(completed_quantity, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE form_id = ? OR id = ?`,
+          [formId, isNaN(Number(formId)) ? -1 : Number(formId)]
+        );
+        const updatedForm = await query.get(
+          `SELECT completed_quantity FROM stage_work_forms WHERE form_id = ? OR id = ? LIMIT 1`,
+          [formId, isNaN(Number(formId)) ? -1 : Number(formId)]
+        );
+        completedCount = updatedForm?.completed_quantity;
+      } catch (e) { }
+    }
+
     return {
       success: true,
       meter_no: meterNo,
       seal_barcode: sealBarcode,
       status: 'VERIFIED',
-      message: `Meter #${meterNo} successfully paired with Seal #${sealBarcode} and saved.`,
+      completed_quantity: completedCount,
+      message: `Meter #${meterNo} successfully verified and saved.`,
       result
     };
   },
@@ -82,11 +103,11 @@ const Stage08Service = {
     const records = await StageEngineService.getRecords(8, limit);
     return records.map(r => ({
       ...r,
-      seal_barcode: r.seal_barcode || `SEAL-ZM-${r.meter_no}`,
+      seal_barcode: r.measurements?.meterLeftSeal1 || r.measurements?.seal_barcode || r.seal_barcode || `SEAL-${r.meter_no}`,
       meter_serial: r.meter_no,
-      weld_temp: r.weld_temp || '185°C',
-      pressure: r.pressure || '4.2 bar',
-      status: r.status === 'PASS' ? 'VERIFIED' : r.status
+      seals: r.measurements || {},
+      status: r.status === 'PASS' ? 'VERIFIED' : r.status,
+      time: r.created_at ? new Date(r.created_at).toLocaleTimeString() : 'N/A'
     }));
   },
 

@@ -514,6 +514,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   // 1. Fetch available Optical Ports from Node.js backend
   const fetchAvailableUsbPorts = async () => {
+    if (stageId === 9 || Number(stageId) === 9) return;
     if (isDemoMode) {
       setAvailablePorts(['DEMO-PORT-01', 'DEMO-PORT-02']);
       setDetailedPorts([
@@ -554,7 +555,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           setUsbConnected(false);
           setUsbDeviceName('');
           setTestState('IDLE');
-          showWarningAlert('USB Hardware Disconnected', 'Physical USB Serial device was disconnected/unplugged.');
         }
         setSelectedPort('');
       }
@@ -582,6 +582,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   // Connect WebSocket gateway for real-time live updates
   useEffect(() => {
+    if (stageId === 9 || Number(stageId) === 9) return;
     fetchAvailableUsbPorts();
 
     const host = window.location.hostname || 'localhost';
@@ -612,7 +613,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
             setUsbConnected(false);
             setUsbDeviceName('');
             setTestState('IDLE');
-            showWarningAlert('USB Hardware Disconnected', 'USB Serial device disconnected.');
           } else if (event === 'jig.test.started') {
             setTestState('STARTING');
           } else if (event === 'jig.ack.received') {
@@ -650,7 +650,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
         wsRef.current.close();
       }
     };
-  }, []);
+  }, [stageId]);
 
   // Whenever jigData changes, trigger duplicate checking
   useEffect(() => {

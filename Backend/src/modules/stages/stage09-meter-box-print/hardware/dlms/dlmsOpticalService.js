@@ -396,23 +396,41 @@ class DlmsOpticalService {
 
       const isDetected = opticalPorts.length > 0;
       const primary = isDetected ? opticalPorts[0] : null;
-      const isConnected = false;
+
+      // Check if previously connected optical port is still physically present in Device Manager
+      let isConnected = false;
+      let connectedPortObj = null;
+      if (activeOpticalConnectedPort) {
+        const cleanActive = (activeOpticalConnectedPort.match(/COM\d+/i)?.[0] || activeOpticalConnectedPort).toUpperCase();
+        connectedPortObj = opticalPorts.find(p => {
+          const cleanP = (p.path.match(/COM\d+/i)?.[0] || p.path).toUpperCase();
+          return cleanP === cleanActive;
+        });
+        if (connectedPortObj) {
+          isConnected = true;
+        } else {
+          // Port was physically unplugged from system
+          logger.warn(`[DlmsOpticalService] Active port ${activeOpticalConnectedPort} physically removed from system.`);
+          activeOpticalConnectedPort = null;
+          isConnected = false;
+        }
+      }
 
       return {
         connected: isConnected,
         detected: isDetected,
-        port: primary ? primary.path : null,
-        friendlyName: primary ? primary.friendlyName : null,
-        manufacturer: primary ? primary.manufacturer : null,
+        port: isConnected ? activeOpticalConnectedPort : (primary ? primary.path : null),
+        friendlyName: isConnected && connectedPortObj ? connectedPortObj.friendlyName : (primary ? primary.friendlyName : null),
+        manufacturer: isConnected && connectedPortObj ? connectedPortObj.manufacturer : (primary ? primary.manufacturer : null),
         source: 'server',
         baudRate: 9600,
         dataBits: 8,
         parity: 'none',
         stopBits: 1,
         ports: opticalPorts,
-        message: isDetected
-          ? `Ports detected: ${opticalPorts.map(p => p.friendlyName || p.path).join(', ')}. Ready to connect.`
-          : 'No serial port detected.'
+        message: isConnected
+          ? `Optical Cable connected on ${activeOpticalConnectedPort}`
+          : (isDetected ? `Ports detected: ${opticalPorts.map(p => p.friendlyName || p.path).join(', ')}. Ready to connect.` : 'No serial port detected.')
       };
     } catch (err) {
       logger.error('[DlmsOpticalService] Error checking optical cable:', err);
@@ -494,6 +512,34 @@ class DlmsOpticalService {
           message: `Port Not Detected on ${portName || 'selected port'}. Please check physical connection.`
         };
       }
+
+      // If already connected to this target port, return success immediately
+      const activeClean = activeOpticalConnectedPort ? (activeOpticalConnectedPort.match(/COM\d+/i)?.[0] || activeOpticalConnectedPort).toUpperCase() : null;
+      const targetClean = (target.path.match(/COM\d+/i)?.[0] || target.path).toUpperCase();
+      if (activeClean && activeClean === targetClean) {
+        return {
+          success: true,
+          connected: true,
+          port: target.path,
+          friendlyName: target.friendlyName,
+          baudRate: 9600,
+          ports: opticalPorts,
+          message: `Already connected to ${target.friendlyName}.`
+        };
+      }
+
+      // Mutual exclusion check: Check if Laser Serial Service is currently using this port
+      try {
+        const laserSerialService = require('../laser/laserSerialService');
+        if (laserSerialService && laserSerialService.isPortInUse(target.path)) {
+          return {
+            success: false,
+            connected: false,
+            ports: opticalPorts,
+            message: `Port ${target.path} is currently connected to Laser Port. Please select a different COM port or disconnect Laser Port first.`
+          };
+        }
+      } catch (_) { }
 
       // Establish physical communication with selected COM port
       return await new Promise((resolve) => {

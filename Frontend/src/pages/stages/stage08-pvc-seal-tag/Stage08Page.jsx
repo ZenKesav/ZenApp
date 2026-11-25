@@ -1,44 +1,213 @@
-import React from 'react';
-import { useStage08SealTag } from '../../../hooks/stages/useStage08SealTag';
-import LeftSealScannerWidget from '../../../components/stages/stage08-pvc-seal-tag/hardware/LeftSealScannerWidget';
-import RightBodyScannerWidget from '../../../components/stages/stage08-pvc-seal-tag/hardware/RightBodyScannerWidget';
-import SealMismatchWarning from '../../../components/stages/stage08-pvc-seal-tag/SealMismatchWarning';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { stageManagementService } from '../../../services/apiServices';
+import { stage08Service } from '../../../services/stages/stage08.service';
+import { showSuccessAlert, showErrorAlert } from '../../../utils/swal';
+
+export const STAGE_08_FIELDS = [
+  { key: 'hologramSeal1', label: 'Hologram Seal 1', shortLabel: 'Hologram 1', placeholder: 'Scan or enter Hologram Seal 1 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal2', label: 'Hologram Seal 2', shortLabel: 'Hologram 2', placeholder: 'Scan or enter Hologram Seal 2 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal3', label: 'Hologram Seal 3', shortLabel: 'Hologram 3', placeholder: 'Scan or enter Hologram Seal 3 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal4', label: 'Hologram Seal 4', shortLabel: 'Hologram 4', placeholder: 'Scan or enter Hologram Seal 4 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal5', label: 'Hologram Seal 5', shortLabel: 'Hologram 5', placeholder: 'Scan or enter Hologram Seal 5 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal6', label: 'Hologram Seal 6', shortLabel: 'Hologram 6', placeholder: 'Scan or enter Hologram Seal 6 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal7', label: 'Hologram Seal 7', shortLabel: 'Hologram 7', placeholder: 'Scan or enter Hologram Seal 7 barcode...', icon: 'ti-shield-check' },
+  { key: 'hologramSeal8', label: 'Hologram Seal 8', shortLabel: 'Hologram 8', placeholder: 'Scan or enter Hologram Seal 8 barcode...', icon: 'ti-shield-check' },
+  { key: 'meterLeftSeal1', label: 'Meter Left Seal 1', shortLabel: 'Left Seal 1', placeholder: 'Scan or enter Meter Left Seal 1 barcode...', icon: 'ti-tag' },
+  { key: 'meterLeftSeal2', label: 'Meter Left Seal 2', shortLabel: 'Left Seal 2', placeholder: 'Scan or enter Meter Left Seal 2 barcode...', icon: 'ti-tag' },
+  { key: 'meterRightSeal1', label: 'Meter Right Seal 1', shortLabel: 'Right Seal 1', placeholder: 'Scan or enter Meter Right Seal 1 barcode...', icon: 'ti-tag' },
+  { key: 'meterRightSeal2', label: 'Meter Right Seal 2', shortLabel: 'Right Seal 2', placeholder: 'Scan or enter Meter Right Seal 2 barcode...', icon: 'ti-tag' },
+  { key: 'modemSeal', label: 'Modem Seal', shortLabel: 'Modem Seal', placeholder: 'Scan or enter Modem Seal barcode...', icon: 'ti-wifi' },
+  { key: 'looseSeal1', label: 'Loose Seal 1', shortLabel: 'Loose Seal 1', placeholder: 'Scan or enter Loose Seal 1 barcode...', icon: 'ti-barcode' },
+  { key: 'looseSeal2', label: 'Loose Seal 2', shortLabel: 'Loose Seal 2', placeholder: 'Scan or enter Loose Seal 2 barcode...', icon: 'ti-barcode' },
+  { key: 'looseSeal3', label: 'Loose Seal 3', shortLabel: 'Loose Seal 3', placeholder: 'Scan or enter Loose Seal 3 barcode...', icon: 'ti-barcode' },
+  { key: 'nicSerialNumber', label: 'NIC SN', shortLabel: 'NIC SN', placeholder: 'Scan or enter NIC SN barcode...', icon: 'ti-cpu' }
+];
 
 export default function Stage08Page() {
-  const {
-    sealBarcode,
-    setSealBarcode,
-    meterSerial,
-    setMeterSerial,
-    isSealing,
-    isWelded,
-    isMismatch,
-    mismatchReason,
-    weldTemp,
-    clampPressure,
-    weldDuration,
-    ultrasonicFrequency,
-    records,
-    loadingRecords,
-    logs,
-    triggerSealWeld,
-    resetInputs,
-    fetchRecords
-  } = useStage08SealTag();
+  const [activeWorkForm, setActiveWorkForm] = useState(null);
+  const [loadingForm, setLoadingForm] = useState(true);
+  const [completedCount, setCompletedCount] = useState(0);
 
-  const handleKeyPress = (e) => {
+  // Meter identifier & dynamic seal input values
+  const [meterSerial, setMeterSerial] = useState('');
+  const [fieldValues, setFieldValues] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Verified records history
+  const [records, setRecords] = useState([]);
+  const [loadingRecords, setLoadingRecords] = useState(false);
+
+  const inputRefs = useRef({});
+
+  // 1. Load active assigned work form for Stage 8
+  const loadActiveWorkForm = async () => {
+    try {
+      const res = await stageManagementService.getForms({ stage_number: 8 });
+      const forms = Array.isArray(res) ? res : (res?.forms || res?.data || []);
+
+      if (forms && forms.length > 0) {
+        // Find assigned active work form
+        const assigned = forms.find(f =>
+          Boolean(f.assigned_operator_id) &&
+          f.status !== 'DE-ACTIVE' &&
+          f.status !== 'COMPLETED'
+        ) || forms[0];
+
+        setActiveWorkForm(assigned || null);
+        if (assigned) {
+          setCompletedCount(assigned.completed_quantity || 0);
+        }
+      } else {
+        setActiveWorkForm(null);
+      }
+    } catch (err) {
+      console.warn('[Stage08] Error loading work forms:', err.message);
+    } finally {
+      setLoadingForm(false);
+    }
+  };
+
+  // 2. Load verified records for Stage 8
+  const fetchRecords = async () => {
+    setLoadingRecords(true);
+    try {
+      const res = await stage08Service.getRecords({ limit: 50 });
+      const list = Array.isArray(res) ? res : (res?.records || res?.data || []);
+      setRecords(list);
+    } catch (err) {
+      console.warn('[Stage08] Error loading records:', err.message);
+    } finally {
+      setLoadingRecords(false);
+    }
+  };
+
+  useEffect(() => {
+    loadActiveWorkForm();
+    fetchRecords();
+    const interval = setInterval(loadActiveWorkForm, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Filter active fields configured for this work order
+  const activeFields = useMemo(() => {
+    if (!activeWorkForm) return [];
+    const statuses = activeWorkForm.print_config?.stage08FieldStatuses || {};
+    return STAGE_08_FIELDS.filter(f => Boolean(statuses[f.key]));
+  }, [activeWorkForm]);
+
+  // Handle changing input for a specific field
+  const handleFieldValueChange = (key, value) => {
+    setFieldValues(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  // Move to next field on Enter key
+  const handleKeyDown = (e, currentKey) => {
     if (e.key === 'Enter') {
-      if (sealBarcode && meterSerial && !isMismatch) {
-        triggerSealWeld();
+      e.preventDefault();
+      if (currentKey === 'meterSerial') {
+        if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
+          inputRefs.current[activeFields[0].key].focus();
+        }
+      } else {
+        const currentIndex = activeFields.findIndex(f => f.key === currentKey);
+        if (currentIndex >= 0 && currentIndex < activeFields.length - 1) {
+          const nextKey = activeFields[currentIndex + 1].key;
+          if (inputRefs.current[nextKey]) {
+            inputRefs.current[nextKey].focus();
+          }
+        } else if (isAllScanned) {
+          handleSubmit();
+        }
       }
     }
   };
 
+  // Check if meter serial and all active fields have values
+  const isMeterSerialFilled = Boolean(meterSerial && meterSerial.trim().length >= 4);
+  const isAllScanned = Boolean(
+    isMeterSerialFilled &&
+    (activeFields.length === 0 || activeFields.every(f => fieldValues[f.key] && String(fieldValues[f.key]).trim().length > 0))
+  );
+
+  // Clear all form inputs
+  const handleClear = () => {
+    setMeterSerial('');
+    setFieldValues({});
+    if (inputRefs.current.meterSerial) {
+      inputRefs.current.meterSerial.focus();
+    }
+  };
+
+  // Submit verified seals record
+  const handleSubmit = async () => {
+    if (!isAllScanned || isSubmitting) return;
+
+    if (!activeWorkForm) {
+      showErrorAlert('No Active Work Order', 'Please assign an active Work Order to Stage 8 before verifying seals.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        meter_no: meterSerial.trim(),
+        meter_serial: meterSerial.trim(),
+        form_id: activeWorkForm.form_id || activeWorkForm.id,
+        work_id: activeWorkForm.form_id,
+        status: 'PASS',
+        seals: {
+          meter_serial: meterSerial.trim(),
+          ...fieldValues
+        }
+      };
+
+      const res = await stage08Service.submitSeal(payload);
+      if (res && res.success) {
+        showSuccessAlert(
+          'Seal Verified & Saved',
+          `Meter ${meterSerial.trim()} paired with all ${activeFields.length} security seals successfully!`
+        );
+
+        if (typeof res.completed_quantity === 'number') {
+          setCompletedCount(res.completed_quantity);
+        } else {
+          setCompletedCount(prev => prev + 1);
+        }
+
+        // Reset inputs for next meter
+        setMeterSerial('');
+        setFieldValues({});
+        if (inputRefs.current.meterSerial) {
+          inputRefs.current.meterSerial.focus();
+        }
+
+        fetchRecords();
+      } else {
+        showErrorAlert('Submission Failed', res?.message || 'Failed to submit seal verification.');
+      }
+    } catch (err) {
+      showErrorAlert('Error', err.message || 'Error submitting seal verification.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Export records to CSV
   const handleExportCsv = () => {
-    let csv = "\uFEFFID,Seal Barcode,Meter Serial,Weld Temp,Pneumatic Pressure,Status,Timestamp\n";
+    if (!records || records.length === 0) {
+      showErrorAlert('No Records', 'There are no verified records to export.');
+      return;
+    }
+
+    let csv = '\uFEFF# ID,Meter Serial,Seals Data,Status,Timestamp\n';
     records.forEach((r, idx) => {
-      csv += `${r.id || idx + 1},${r.seal_barcode},${r.meter_serial},${r.weld_temp || '185°C'},${r.pressure || '4.2 bar'},${r.status || 'VERIFIED'},${r.time || 'N/A'}\n`;
+      const sealDetails = typeof r.seals === 'object' && r.seals ? JSON.stringify(r.seals).replace(/"/g, '""') : (r.seal_barcode || '');
+      csv += `"${r.id || idx + 1}","${r.meter_serial || r.meter_no || ''}","${sealDetails}","${r.status || 'VERIFIED'}","${r.time || r.created_at || ''}"\n`;
     });
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -47,207 +216,160 @@ export default function Stage08Page() {
     link.click();
   };
 
-  const isReadyToWeld = Boolean(sealBarcode.trim() && meterSerial.trim() && !isMismatch);
-
   return (
     <div className="container-fluid px-0 pb-4">
-      {/* Top Header Bar */}
-      <div className="row mb-4">
-        <div className="col-12">
-          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 bg-white p-4 rounded-3 shadow-sm border">
-            <div>
-              <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                <h1 className="fs-3 mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-                  <i className="ti ti-shield-check text-primary"></i>
-                  <span>Stage 08: PVC Security Seal &amp; Ultrasonic Welding</span>
-                </h1>
-                <span className="badge bg-primary text-white font-mono px-2.5 py-1 fs-6 shadow-2xs">
-                  Stage 08
+      {/* 1. Active Work Order Ribbon Banner (Exact Image 2 Style) */}
+      <div className="card shadow-2xs border-0 mb-4 bg-white">
+        <div className="card-body py-2.5 px-3.5">
+          {!activeWorkForm || !activeWorkForm.assigned_operator_id ? (
+            <div className="text-secondary small fst-italic d-flex align-items-center gap-1.5 py-1">
+              <i className="ti ti-info-circle text-warning fs-5"></i>
+              <span>No Work ID currently assigned to Stage #8. Assign a Work ID in Stage Management to start production.</span>
+            </div>
+          ) : (
+            <div className="small font-mono text-secondary d-flex align-items-center justify-content-between gap-3 flex-wrap">
+              <div className="d-flex align-items-center gap-3 flex-wrap">
+                <span className="d-inline-flex align-items-center gap-1.5">
+                  <i className="ti ti-id-badge text-primary fs-5"></i>
+                  <strong className="text-dark">ACTIVE WORK ID:</strong>{' '}
+                  <span className="text-primary fw-bold">{activeWorkForm.form_id}</span>
                 </span>
-                <span className="badge bg-success text-white px-3 py-1.5 font-mono text-xs d-inline-flex align-items-center gap-1 shadow-2xs">
-                  <i className="ti ti-circle-check fs-6"></i> Station Active (Station-08)
+                <span>&bull;</span>
+                <span>
+                  <strong>Batch:</strong> <span className="text-dark fw-bold">{activeWorkForm.batch_no}</span>
                 </span>
-                {isWelded && (
-                  <span className="badge bg-success text-white px-3 py-1 font-mono shadow-2xs">
-                    <i className="ti ti-check me-1"></i>WELD VERIFIED
-                  </span>
-                )}
-              </div>
-              <p className="text-secondary mb-0 small">
-                Dual barcode matching &bull; Verification of tamper-evident security seal with laser-marked meter body &amp; pneumatic ultrasonic weld bonding.
-              </p>
-            </div>
-
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <button
-                className="btn btn-outline-secondary btn-sm font-sans fw-semibold shadow-2xs"
-                onClick={handleExportCsv}
-              >
-                <i className="ti ti-file-spreadsheet me-1 text-success"></i> Export CSV
-              </button>
-              <button
-                className="btn btn-light border btn-sm font-sans fw-semibold"
-                onClick={resetInputs}
-              >
-                <i className="ti ti-refresh me-1"></i> Clear Station
-              </button>
-              <button
-                className={`btn px-4 py-2 fw-bold shadow-sm ${!isReadyToWeld || isSealing ? 'btn-secondary' : 'btn-primary'}`}
-                onClick={triggerSealWeld}
-                disabled={!isReadyToWeld || isSealing}
-              >
-                <i className={`ti ${isSealing ? 'ti-loader spin' : 'ti-flame'} me-1`}></i>
-                {isSealing ? 'Ultrasonic Welding...' : 'Trigger Ultrasonic Weld'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mismatch Warning */}
-      <SealMismatchWarning isMismatch={isMismatch} reason={mismatchReason} />
-
-      {/* Dual Barcode Scanner Widgets */}
-      <div className="row g-3 mb-4">
-        <div className="col-md-6">
-          <LeftSealScannerWidget
-            value={sealBarcode}
-            onChange={setSealBarcode}
-            onKeyDown={handleKeyPress}
-            disabled={isSealing}
-          />
-        </div>
-        <div className="col-md-6">
-          <RightBodyScannerWidget
-            value={meterSerial}
-            onChange={setMeterSerial}
-            onKeyDown={handleKeyPress}
-            disabled={isSealing}
-          />
-        </div>
-      </div>
-
-      {/* Ultrasonic Machine Telemetry & Log Console */}
-      <div className="row g-3 mb-4">
-        {/* Machine Parameters */}
-        <div className="col-lg-6">
-          <div className="card shadow-sm border-0 bg-white h-100">
-            <div className="card-header bg-white py-3 border-bottom d-flex align-items-center justify-content-between">
-              <div className="d-flex align-items-center">
-                <i className="ti ti-cpu fs-4 text-primary me-2"></i>
-                <h6 className="mb-0 fw-bold text-dark">Ultrasonic Welder Telemetry Parameters</h6>
-              </div>
-              <span className="badge bg-success-subtle text-success border border-success font-mono">
-                PNEUMATICS OK
-              </span>
-            </div>
-            <div className="card-body p-3">
-              <div className="row g-3 font-mono">
-                <div className="col-6">
-                  <div className="card border-0 bg-primary-subtle p-3 rounded-3">
-                    <span className="text-muted text-xs d-block">Weld Temperature</span>
-                    <strong className="text-primary fs-4">{weldTemp} &deg;C</strong>
-                    <small className="text-muted d-block text-2xs">Target: 180 - 190&deg;C</small>
-                  </div>
-                </div>
-                <div className="col-6">
-                  <div className="card border-0 bg-info-subtle p-3 rounded-3">
-                    <span className="text-muted text-xs d-block">Clamp Pressure</span>
-                    <strong className="text-info-emphasis fs-4">{clampPressure.toFixed(1)} bar</strong>
-                    <small className="text-muted d-block text-2xs">Regulated Air Line</small>
-                  </div>
-                </div>
-                <div className="col-6">
-                  <div className="card border-0 bg-warning-subtle p-3 rounded-3">
-                    <span className="text-muted text-xs d-block">Weld Duration</span>
-                    <strong className="text-warning-emphasis fs-4">{weldDuration.toFixed(2)} s</strong>
-                    <small className="text-muted d-block text-2xs">0.8s Cooling Dwell</small>
-                  </div>
-                </div>
-                <div className="col-6">
-                  <div className="card border-0 bg-success-subtle p-3 rounded-3">
-                    <span className="text-muted text-xs d-block">Generator Freq</span>
-                    <strong className="text-success fs-4">{ultrasonicFrequency.toFixed(1)} kHz</strong>
-                    <small className="text-muted d-block text-2xs">Titanium Booster Horn</small>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Live Welder Log Console */}
-        <div className="col-lg-6">
-          <div className="card bg-dark text-white border-secondary font-mono shadow-sm h-100">
-            <div className="card-header bg-black py-2 px-3 border-secondary d-flex align-items-center justify-content-between">
-              <span className="small text-secondary fw-bold">
-                <i className="ti ti-terminal me-2 text-info"></i>Station 08 Ultrasonic Welder Live Console
-              </span>
-              <span className="badge bg-secondary text-white text-xs">Pneumatics Active</span>
-            </div>
-            <div className="card-body p-3 overflow-auto" style={{ maxHeight: '220px', fontSize: '0.785rem' }}>
-              {logs.map((lg) => (
-                <div key={lg.id} className="py-0.5 text-light opacity-90">
-                  <span className="text-muted me-2">[{lg.time}]</span>
-                  <span className={lg.type === 'success' ? 'text-success' : lg.type === 'error' ? 'text-danger' : 'text-light'}>
-                    {lg.text}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Verified Seals History Table */}
-      <div className="card shadow-sm border-0 bg-white">
-        <div className="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-          <div>
-            <h6 className="fw-bold mb-0 text-dark">
-              <i className="ti ti-history me-1 text-primary"></i> Stage 08 Verified Seal History
-            </h6>
-            <small className="text-secondary">Recent ultrasonic security seal attachments in current shift</small>
-          </div>
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
-            onClick={fetchRecords}
-            disabled={loadingRecords}
-          >
-            <i className={`ti ti-refresh me-1 ${loadingRecords ? 'ti-spin' : ''}`}></i> Refresh
-          </button>
-        </div>
-        <div className="table-responsive">
-          <table className="table table-hover table-striped align-middle mb-0 text-nowrap">
-            <thead className="table-light">
-              <tr>
-                <th scope="col" style={{ width: '50px' }}>#</th>
-                <th scope="col">PVC Seal Barcode</th>
-                <th scope="col">Meter Body Serial</th>
-                <th scope="col">Weld Temp</th>
-                <th scope="col">Pressure</th>
-                <th scope="col">Result</th>
-                <th scope="col">Timestamp</th>
-              </tr>
-            </thead>
-            <tbody className="font-mono text-xs">
-              {records.map((r, idx) => (
-                <tr key={idx}>
-                  <td>#{r.id || idx + 1}</td>
-                  <td className="fw-bold text-primary">{r.seal_barcode}</td>
-                  <td className="fw-bold text-dark">{r.meter_serial}</td>
-                  <td>{r.weld_temp || '185°C'}</td>
-                  <td>{r.pressure || '4.2 bar'}</td>
-                  <td>
-                    <span className="badge bg-success text-white">
-                      {r.status || 'VERIFIED'}
+                {activeWorkForm.month_year && (
+                  <>
+                    <span>&bull;</span>
+                    <span>
+                      <strong>Date:</strong> <span className="text-dark fw-bold">{activeWorkForm.month_year}</span>
                     </span>
-                  </td>
-                  <td className="text-muted">{r.time || '10:20 AM'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </>
+                )}
+                <span>&bull;</span>
+                <span>
+                  <strong>Target:</strong> <span className="text-dark fw-bold">{activeWorkForm.target_quantity || 0}</span>
+                </span>
+                <span>&bull;</span>
+                <span>
+                  <strong>Completed:</strong> <span className="text-success fw-bold">{completedCount}</span>
+                </span>
+                <span>&bull;</span>
+                <span className={`badge px-2.5 py-1 ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary text-white'}`}>
+                  {activeWorkForm.status || 'ACTIVE'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Active Work Order Security Seal Input Fields */}
+      <div className="card shadow-2xs border-0 mb-4 bg-white">
+        <div className="card-header bg-white py-3 px-3.5 border-bottom border-secondary-subtle d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div className="d-flex align-items-center gap-2">
+            <i className="ti ti-tags text-primary fs-4"></i>
+            <h6 className="mb-0 fw-bold text-dark">
+              Active Security Seal Fields ({activeFields.length} Configured)
+            </h6>
+          </div>
+          <span className="small text-muted font-mono">
+            Work ID: {activeWorkForm?.form_id || 'N/A'}
+          </span>
+        </div>
+        <div className="card-body p-3.5">
+          {activeFields.length === 0 ? (
+            <div className="p-4 text-center text-muted">
+              <i className="ti ti-alert-triangle fs-2 text-warning d-block mb-2"></i>
+              <p className="mb-1 fw-semibold text-dark">No Active Input Fields Configured</p>
+              <small className="text-secondary">
+                This work order currently has no security seal fields enabled. Configure active seal fields under Stage Management &gt; Edit Work Order.
+              </small>
+            </div>
+          ) : (
+            <div className="row g-3">
+              {activeFields.map((field) => {
+                const val = fieldValues[field.key] || '';
+                const isFilled = Boolean(val && val.trim().length > 0);
+
+                return (
+                  <div className="col-12 col-md-6" key={field.key}>
+                    <div className={`p-3 rounded-3 border h-100 ${isFilled ? 'border-success-subtle bg-success-subtle/10' : 'border-secondary-subtle bg-white'}`}>
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <span className="fw-semibold text-dark small d-flex align-items-center gap-1.5">
+                          <i className={`ti ${field.icon || 'ti-tag'} text-primary`}></i>
+                          {field.label}
+                        </span>
+                        <div>
+                          {isFilled ? (
+                            <span className="badge bg-success text-white px-2 py-0.5 font-mono text-2xs">
+                              <i className="ti ti-check me-0.5"></i> SCANNED
+                            </span>
+                          ) : (
+                            <span className="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-0.5 font-mono text-2xs">
+                              AWAITING SCAN
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="input-group input-group-sm">
+                        <span className="input-group-text bg-light border-secondary-subtle">
+                          <i className="ti ti-scan text-muted"></i>
+                        </span>
+                        <input
+                          type="text"
+                          ref={(el) => (inputRefs.current[field.key] = el)}
+                          className="form-control font-mono fw-medium"
+                          placeholder={field.placeholder}
+                          value={val}
+                          onChange={(e) => handleFieldValueChange(field.key, e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, field.key)}
+                        />
+                        {val && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary btn-sm"
+                            onClick={() => handleFieldValueChange(field.key, '')}
+                            title="Clear"
+                          >
+                            <i className="ti ti-x"></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Action Button */}
+          {activeFields.length > 0 && (
+            <div className="mt-4 pt-3 border-top border-secondary-subtle d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <span className="small text-muted font-mono">
+                {activeFields.filter(f => fieldValues[f.key] && fieldValues[f.key].trim().length > 0).length} of {activeFields.length} seals scanned
+              </span>
+              <div className="d-flex align-items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-light border btn-sm fw-semibold"
+                  onClick={handleClear}
+                >
+                  <i className="ti ti-trash me-1"></i> Reset Fields
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm px-4 fw-bold shadow-xs ${isAllScanned && !isSubmitting ? 'btn-success text-white' : 'btn-secondary text-white'}`}
+                  onClick={handleSubmit}
+                  disabled={!isAllScanned || isSubmitting}
+                >
+                  <i className={`ti ${isSubmitting ? 'ti-loader spin' : 'ti-circle-check'} me-1`}></i>
+                  {isSubmitting ? 'Verifying & Saving...' : 'Verify & Submit Seals'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
