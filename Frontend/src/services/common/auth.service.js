@@ -9,13 +9,14 @@ export const authService = {
     if (res.token) {
       sessionStorage.setItem('zenmeter_token', res.token);
       sessionStorage.setItem('zenmeter_user', JSON.stringify(res.user));
-      localStorage.setItem('zenmeter_token', res.token);
-      localStorage.setItem('zenmeter_user', JSON.stringify(res.user));
-      localStorage.setItem('token', res.token);
-      localStorage.setItem('user', JSON.stringify(res.user));
+      // Remove from localStorage so new tabs start with a clean Login page
+      localStorage.removeItem('zenmeter_token');
+      localStorage.removeItem('zenmeter_user');
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       if (res.currentShift) {
         sessionStorage.setItem('zenmeter_shift', JSON.stringify(res.currentShift));
-        localStorage.setItem('zenmeter_shift', JSON.stringify(res.currentShift));
+        localStorage.removeItem('zenmeter_shift');
       }
     }
     return res;
@@ -25,12 +26,9 @@ export const authService = {
     const res = await request('/auth/me');
     if (res.user) {
       sessionStorage.setItem('zenmeter_user', JSON.stringify(res.user));
-      localStorage.setItem('zenmeter_user', JSON.stringify(res.user));
-      localStorage.setItem('user', JSON.stringify(res.user));
     }
     if (res.currentShift) {
       sessionStorage.setItem('zenmeter_shift', JSON.stringify(res.currentShift));
-      localStorage.setItem('zenmeter_shift', JSON.stringify(res.currentShift));
     }
     return res;
   },

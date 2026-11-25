@@ -1,6 +1,6 @@
 import React from 'react';
-import StageExecution from '../StageExecution';
+import Stage04Execution from './Stage04Execution';
 
 export default function Stage04Page(props) {
-  return <StageExecution stageId={4} {...props} />;
+  return <Stage04Execution stageId={4} {...props} />;
 }

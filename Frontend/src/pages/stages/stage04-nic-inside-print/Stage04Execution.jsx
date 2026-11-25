@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../app/store';
-import { saveStageForUser, isStageActive } from '../../utils/stageUtils';
-import { jigService, stageManagementService, supervisorTestService, qcTestService } from '../../services/apiServices';
-import { showWarningAlert, showErrorAlert, showSuccessAlert } from '../../utils/swal';
-import { Modal } from '../../components/CommonComponents';
-import MeterBodyPrintConsole from './stage09-meter-box-print/MeterBodyPrintConsole';
+import { useAuth } from '../../../app/store';
+import { saveStageForUser, isStageActive } from '../../../utils/stageUtils';
+import { jigService, stageManagementService, supervisorTestService, qcTestService } from '../../../services/apiServices';
+import { showWarningAlert, showErrorAlert, showSuccessAlert } from '../../../utils/swal';
+import { Modal } from '../../../components/CommonComponents';
+import MeterBodyPrintConsole from '../stage09-meter-box-print/MeterBodyPrintConsole';
 
 // SVG QR Code Generator Component for Printable NIC Labels
 function QRCodeSVG({ value, size = 110 }) {
@@ -161,17 +161,33 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
   const [activeWorkForm, setActiveWorkForm] = useState(null);
   const [operatorWorkForms, setOperatorWorkForms] = useState([]);
 
-  useEffect(() => {
-    if (stageId) {
-      stageManagementService.getForms({ stage_number: stageId })
-        .then(res => {
-          const forms = res?.forms || res?.data || [];
-          const assignedForm = forms.find(f => Boolean(f.assigned_operator_id) && f.status !== 'COMPLETED' && f.status !== 'DE-ACTIVE');
-          setOperatorWorkForms(assignedForm ? [assignedForm] : []);
-          setActiveWorkForm(assignedForm || null);
-        })
-        .catch(err => console.error('Error fetching stage work forms for operator:', err));
+  const loadActiveWorkForm = async () => {
+    try {
+      const res = await stageManagementService.getForms({ stage_number: stageId || 4 });
+      const forms = Array.isArray(res) ? res : (res?.forms || res?.data || []);
+
+      if (forms && forms.length > 0) {
+        // Find assigned active work form
+        const assigned = forms.find(f =>
+          Boolean(f.assigned_operator_id) &&
+          f.status !== 'DE-ACTIVE' &&
+          f.status !== 'COMPLETED'
+        ) || forms.find(f => f.status !== 'DE-ACTIVE' && f.status !== 'COMPLETED') || forms[0];
+
+        setActiveWorkForm(assigned || null);
+        setOperatorWorkForms(forms);
+      } else {
+        setActiveWorkForm(null);
+      }
+    } catch (err) {
+      console.warn('[Stage04] Error loading work forms:', err.message);
     }
+  };
+
+  useEffect(() => {
+    loadActiveWorkForm();
+    const interval = setInterval(loadActiveWorkForm, 10000);
+    return () => clearInterval(interval);
   }, [stageId, user]);
 
 
@@ -1434,6 +1450,73 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   return (
     <>
+      {/* Active Work Order Ribbon Banner (Exact Image Style) */}
+      <div className="card shadow-2xs border-0 mb-3 bg-white">
+        <div className="card-body py-2.5 px-3.5">
+          {!activeWorkForm ? (
+            <div className="text-secondary small fst-italic d-flex align-items-center gap-1.5 py-1">
+              <i className="ti ti-id-badge text-warning fs-5"></i>
+              <span>No Work ID currently assigned to Stage #4. Assign a Work ID in Stage Management to start production.</span>
+            </div>
+          ) : (
+            <div className="small font-mono text-secondary d-flex align-items-center justify-content-between gap-3 flex-wrap">
+              <div className="d-flex align-items-center gap-3 flex-wrap">
+                <span className="d-inline-flex align-items-center gap-1.5">
+                  <i className="ti ti-id-badge text-primary fs-5"></i>
+                  <strong className="text-dark">ACTIVE WORK ID:</strong>{' '}
+                  <span className="fw-bold" style={{ color: '#e05338' }}>{activeWorkForm.form_id}</span>
+                </span>
+                <span>&bull;</span>
+                <span>
+                  <strong>Batch:</strong> <span className="text-dark fw-bold">{activeWorkForm.batch_no || '-'}</span>
+                </span>
+                {activeWorkForm.month_year && (
+                  <>
+                    <span>&bull;</span>
+                    <span>
+                      <strong>Date:</strong> <span className="text-dark fw-bold">{activeWorkForm.month_year}</span>
+                    </span>
+                  </>
+                )}
+                <span>&bull;</span>
+                <span>
+                  <strong>Target:</strong> <span className="text-dark fw-bold">{activeWorkForm.target_quantity || 0}</span>
+                </span>
+                <span>&bull;</span>
+                <span>
+                  <strong>Completed:</strong> <span className="text-success fw-bold">{activeWorkForm.completed_quantity || 0}</span>
+                </span>
+                <span>&bull;</span>
+                <span className={`badge px-2.5 py-1 ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary text-white'}`}>
+                  {activeWorkForm.status || 'IN_PROGRESS'}
+                </span>
+              </div>
+
+              {operatorWorkForms && operatorWorkForms.length > 1 && (
+                <div className="d-flex align-items-center gap-2">
+                  <span className="small text-muted fw-semibold text-nowrap">Switch Work ID:</span>
+                  <select
+                    className="form-select form-select-sm font-mono fw-semibold py-0.5"
+                    style={{ minWidth: '150px', fontSize: '12px' }}
+                    value={activeWorkForm.id || activeWorkForm.form_id}
+                    onChange={(e) => {
+                      const sel = operatorWorkForms.find(f => String(f.id) === e.target.value || f.form_id === e.target.value);
+                      if (sel) setActiveWorkForm(sel);
+                    }}
+                  >
+                    {operatorWorkForms.map(f => (
+                      <option key={f.id || f.form_id} value={f.id || f.form_id}>
+                        {f.form_id} ({f.batch_no || 'BATCH'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Top Header Bar */}
       <div className="row mb-4">
         <div className="col-12">
@@ -1537,68 +1620,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
         </div>
       </div>
 
-
-
       {/* Active Work Order / Work ID Card assigned by Admin/Supervisor */}
-      {activeWorkForm && (
-        <div className="card shadow-2xs border-0 border-start border-4 border-primary mb-4 bg-white">
-          <div className="card-body p-3.5 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-            <div className="d-flex align-items-center gap-3">
-              <div className="p-2.5 bg-primary-subtle text-primary rounded-3 fs-3 flex-shrink-0">
-                <i className="ti ti-id-badge"></i>
-              </div>
-              <div>
-                <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                  <span className="badge bg-primary text-white font-mono fs-6 px-2.5 py-1 shadow-2xs">
-                    Assigned Work ID: {activeWorkForm.form_id}
-                  </span>
-                  <span className="fw-bold text-dark fs-6">{activeWorkForm.form_title}</span>
-                  <span className={`badge px-2 py-0.5 small ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary-subtle text-primary'}`}>
-                    {activeWorkForm.status || 'IN_PROGRESS'}
-                  </span>
-                </div>
-                <div className="small text-secondary d-flex align-items-center gap-2 flex-wrap">
-                  <span><strong>Batch:</strong> <span className="font-mono text-dark">{activeWorkForm.batch_no || 'BATCH-2026-01'}</span></span>
-                  <span>&bull;</span>
-                  <span><strong>Target:</strong> <span className="text-dark">{activeWorkForm.target_quantity || 100} Meters</span></span>
-                  <span>&bull;</span>
-                  <span><strong>Assigned to:</strong> <span className="text-primary fw-semibold">{activeWorkForm.assigned_operator_name || user?.name || 'Operator'}</span></span>
-                  <span>&bull;</span>
-                  <span><strong>Assigned by:</strong> <span className="text-muted">{activeWorkForm.reassigned_by || activeWorkForm.assigned_by || 'Admin/Supervisor'}</span></span>
-                </div>
-                {activeWorkForm.description && (
-                  <div className="text-muted text-xs mt-1 bg-light p-1.5 rounded border">
-                    <i className="ti ti-info-circle me-1 text-primary"></i>
-                    <strong>Instructions:</strong> {activeWorkForm.description}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {operatorWorkForms.length > 1 && (
-              <div className="d-flex align-items-center gap-2 flex-shrink-0">
-                <span className="small text-muted fw-semibold text-nowrap">Switch Work ID:</span>
-                <select
-                  className="form-select form-select-sm font-mono fw-semibold"
-                  style={{ minWidth: '180px' }}
-                  value={activeWorkForm.id || activeWorkForm.form_id}
-                  onChange={(e) => {
-                    const sel = operatorWorkForms.find(f => String(f.id) === e.target.value || f.form_id === e.target.value);
-                    if (sel) setActiveWorkForm(sel);
-                  }}
-                >
-                  {operatorWorkForms.map(f => (
-                    <option key={f.id || f.form_id} value={f.id || f.form_id}>
-                      {f.form_id} ({f.batch_no || 'BATCH'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* 8-Channel Telemetry Grid */}
       <div className="mb-4">
         <div className="d-flex justify-content-between align-items-center mb-3">

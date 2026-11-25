@@ -9,7 +9,7 @@ import LoginPage from '../../pages/auth/LoginPage';
 import UnauthorizedPage from '../../pages/auth/UnauthorizedPage';
 import NotFoundPage from '../../pages/auth/NotFoundPage';
 
-const StageSelectionPage = lazy(() => import('../../pages/stages/StageSelectionPage'));
+const StageSelectionPage = lazy(() => import('./StageSelectionPage'));
 
 export default function AppRoutes() {
   const domainRoutes = getRegisteredRoutes();

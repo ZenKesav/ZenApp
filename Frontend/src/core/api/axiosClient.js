@@ -11,8 +11,7 @@ export const axiosClient = axios.create({
 axiosClient.interceptors.request.use((config) => {
   const token =
     sessionStorage.getItem('zenmeter_token') ||
-    localStorage.getItem('zenmeter_token') ||
-    localStorage.getItem('token');
+    sessionStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

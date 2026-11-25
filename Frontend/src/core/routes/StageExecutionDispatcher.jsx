@@ -1,17 +1,17 @@
 import React, { lazy, Suspense, useEffect } from 'react';
 import { useParams, Navigate, Link } from 'react-router-dom';
-import { useAuth } from '../../core/context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { getUserAssignedStages, isFullAccessUser, saveStageForUser } from '../../utils/stageUtils';
 
-const Stage01Page = lazy(() => import('./stage01-pcb-code-loading/Stage01Page'));
-const Stage02Page = lazy(() => import('./stage02-nic-pcb-test/Stage02Page'));
-const Stage04Page = lazy(() => import('./stage04-nic-inside-print/Stage04Page'));
-const Stage06Page = lazy(() => import('./stage06-calibration/Stage06Page'));
-const Stage07Page = lazy(() => import('./stage07-final-validation/Stage07Page'));
-const Stage08Page = lazy(() => import('./stage08-pvc-seal-tag/Stage08Page'));
-const Stage09Page = lazy(() => import('./stage09-meter-box-print/Stage09Page'));
-const Stage10Page = lazy(() => import('./stage10-carton-print/Stage10Page'));
-const Stage11Page = lazy(() => import('./stage11-master-carton/Stage11Page'));
+const Stage01Page = lazy(() => import('../../pages/stages/stage01-pcb-code-loading/Stage01Page'));
+const Stage02Page = lazy(() => import('../../pages/stages/stage02-nic-pcb-test/Stage02Page'));
+const Stage04Page = lazy(() => import('../../pages/stages/stage04-nic-inside-print/Stage04Page'));
+const Stage06Page = lazy(() => import('../../pages/stages/stage06-calibration/Stage06Page'));
+const Stage07Page = lazy(() => import('../../pages/stages/stage07-final-validation/Stage07Page'));
+const Stage08Page = lazy(() => import('../../pages/stages/stage08-pvc-seal-tag/Stage08Page'));
+const Stage09Page = lazy(() => import('../../pages/stages/stage09-meter-box-print/Stage09Page'));
+const Stage10Page = lazy(() => import('../../pages/stages/stage10-carton-print/Stage10Page'));
+const Stage11Page = lazy(() => import('../../pages/stages/stage11-master-carton/Stage11Page'));
 
 export default function StageExecutionDispatcher() {
   const { stageId } = useParams();

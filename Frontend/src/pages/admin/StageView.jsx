@@ -6,7 +6,7 @@ import { userService } from '../../services/admin/userService';
 import { Modal, LoadingSpinner, SkeletonTable, Pagination } from '../../components/CommonComponents';
 import { showSuccessAlert, showErrorAlert, showConfirmAlert } from '../../utils/swal';
 import { getUserAssignedStages } from '../../utils/stageUtils';
-import MeterBodyPrintConsole from './stage09-meter-box-print/MeterBodyPrintConsole';
+import MeterBodyPrintConsole from '../stages/stage09-meter-box-print/MeterBodyPrintConsole';
 import MeterInteractiveTextEditor from '../../components/stages/stage09-meter-box-print/MeterBodyPrint/MeterInteractiveTextEditor';
 
 const STAGE_08_FIELDS = [

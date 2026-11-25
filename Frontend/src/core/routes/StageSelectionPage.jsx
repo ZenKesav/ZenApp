@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../core/context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { getUserAssignedStages, isFullAccessUser, saveStageForUser } from '../../utils/stageUtils';
 
 export default function StageSelectionPage() {

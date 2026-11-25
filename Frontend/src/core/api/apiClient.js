@@ -4,13 +4,7 @@ const API_BASE = envBackend ? `${envBackend}/api/v1` : '/api/v1';
 export async function request(endpoint, options = {}) {
   const token =
     sessionStorage.getItem('zenmeter_token') ||
-    localStorage.getItem('zenmeter_token') ||
-    localStorage.getItem('token') ||
     sessionStorage.getItem('token');
-
-  if (token && !sessionStorage.getItem('zenmeter_token')) {
-    sessionStorage.setItem('zenmeter_token', token);
-  }
 
   const headers = {
     'Content-Type': 'application/json',

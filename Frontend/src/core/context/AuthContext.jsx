@@ -8,16 +8,15 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
-      const token =
-        sessionStorage.getItem('zenmeter_token') ||
-        localStorage.getItem('zenmeter_token') ||
-        localStorage.getItem('token') ||
-        sessionStorage.getItem('token');
-      const saved =
-        sessionStorage.getItem('zenmeter_user') ||
-        localStorage.getItem('zenmeter_user') ||
-        localStorage.getItem('user');
-      // Only treat user as logged in if both token and user profile exist
+      // Clear legacy localStorage token so new tabs start with a fresh Login page
+      localStorage.removeItem('zenmeter_token');
+      localStorage.removeItem('token');
+      localStorage.removeItem('zenmeter_user');
+      localStorage.removeItem('user');
+
+      const token = sessionStorage.getItem('zenmeter_token') || sessionStorage.getItem('token');
+      const saved = sessionStorage.getItem('zenmeter_user');
+      // Only treat user as logged in if both token and user profile exist in current tab's sessionStorage
       return (token && saved) ? JSON.parse(saved) : null;
     } catch (e) {
       return null;
@@ -27,9 +26,7 @@ export function AuthProvider({ children }) {
   const [permissions, setPermissions] = useState([]);
   const [currentShift, setCurrentShift] = useState(() => {
     try {
-      const saved =
-        sessionStorage.getItem('zenmeter_shift') ||
-        localStorage.getItem('zenmeter_shift');
+      const saved = sessionStorage.getItem('zenmeter_shift');
       return saved ? JSON.parse(saved) : null;
     } catch (e) {
       return null;
@@ -38,9 +35,7 @@ export function AuthProvider({ children }) {
 
   const [selectedStageId, setSelectedStageIdState] = useState(() => {
     try {
-      const saved =
-        sessionStorage.getItem('zenmeter_selected_stage_id') ||
-        localStorage.getItem('zenmeter_selected_stage_id');
+      const saved = sessionStorage.getItem('zenmeter_selected_stage_id');
       if (saved === 'all') return 'all';
       return saved ? Number(saved) : null;
     } catch (e) {
@@ -56,10 +51,8 @@ export function AuthProvider({ children }) {
     setSelectedStageIdState(val);
     if (val) {
       sessionStorage.setItem('zenmeter_selected_stage_id', String(val));
-      localStorage.setItem('zenmeter_selected_stage_id', String(val));
     } else {
       sessionStorage.removeItem('zenmeter_selected_stage_id');
-      localStorage.removeItem('zenmeter_selected_stage_id');
     }
   };
 
@@ -99,11 +92,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const initAuth = async () => {
-      const token =
-        sessionStorage.getItem('zenmeter_token') ||
-        localStorage.getItem('zenmeter_token') ||
-        localStorage.getItem('token') ||
-        sessionStorage.getItem('token');
+      const token = sessionStorage.getItem('zenmeter_token') || sessionStorage.getItem('token');
 
       if (!token) {
         setUser(null);
@@ -111,11 +100,6 @@ export function AuthProvider({ children }) {
         setCurrentShift(null);
         setLoading(false);
         return;
-      }
-
-      // Synchronize to sessionStorage for new tabs/windows
-      if (!sessionStorage.getItem('zenmeter_token')) {
-        sessionStorage.setItem('zenmeter_token', token);
       }
 
       try {
@@ -127,8 +111,6 @@ export function AuthProvider({ children }) {
             setCurrentShift(res.currentShift);
           }
           sessionStorage.setItem('zenmeter_user', JSON.stringify(res.user));
-          localStorage.setItem('zenmeter_user', JSON.stringify(res.user));
-          localStorage.setItem('user', JSON.stringify(res.user));
         } else {
           throw new Error('User profile invalid');
         }

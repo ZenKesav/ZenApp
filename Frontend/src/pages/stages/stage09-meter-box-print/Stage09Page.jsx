@@ -1,6 +1,18 @@
 import React from 'react';
-import StageExecution from '../StageExecution';
+import MeterBodyPrintConsole from './MeterBodyPrintConsole';
+import { useAuth } from '../../../core/context/AuthContext';
 
 export default function Stage09Page(props) {
-  return <StageExecution stageId={9} {...props} />;
+  const { user } = useAuth();
+
+  return (
+    <MeterBodyPrintConsole
+      stageId={9}
+      stageTitle="Meter Box Body Print"
+      lineType="Production"
+      stationId="Station-09"
+      user={user}
+      {...props}
+    />
+  );
 }
