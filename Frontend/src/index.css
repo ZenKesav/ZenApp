@@ -191,6 +191,7 @@ body {
     font-size: 0.75rem;
     padding: 0.3rem 0.5rem;
   }
+
   .topbar-stage-badge span {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -204,6 +205,7 @@ body {
     opacity: 0;
     transform: translateY(-8px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -511,6 +513,7 @@ body {
   .card-header {
     padding: 0.75rem 1rem;
   }
+
   .card-body {
     padding: 1rem;
   }
@@ -635,11 +638,13 @@ body {
   .table {
     font-size: 0.8125rem;
   }
+
   .table thead th,
   .table th {
     padding: 0.55rem 0.65rem;
     font-size: 0.6875rem;
   }
+
   .table td {
     padding: 0.55rem 0.65rem;
   }
@@ -688,6 +693,7 @@ body {
 
 /* Prevent auto zoom on focus in iOS / Mobile devices */
 @media (max-width: 767.98px) {
+
   .form-control,
   .form-select {
     font-size: 16px !important;
@@ -703,7 +709,7 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.input-group-sm > .input-group-text {
+.input-group-sm>.input-group-text {
   min-height: 34px;
   border-color: var(--border-focus);
   font-size: 0.8125rem;
@@ -714,15 +720,16 @@ body {
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
 
-.input-group-sm:focus-within > .input-group-text,
-.input-group-sm:focus-within > .form-control,
-.input-group-sm:focus-within > .form-select,
-.input-group-sm:focus-within > .btn {
+.input-group-sm:focus-within>.input-group-text,
+.input-group-sm:focus-within>.form-control,
+.input-group-sm:focus-within>.form-select,
+.input-group-sm:focus-within>.btn {
   border-color: var(--primary) !important;
   box-shadow: none !important;
 }
 
 @media (max-width: 767.98px) {
+
   .form-control-sm,
   .form-select-sm {
     font-size: 16px !important;
@@ -757,7 +764,8 @@ input[type="radio"] {
     flex-direction: column;
     align-items: stretch;
   }
-  .filter-bar-responsive > * {
+
+  .filter-bar-responsive>* {
     width: 100% !important;
     max-width: 100% !important;
   }
@@ -1031,9 +1039,11 @@ input[type="radio"] {
     max-width: calc(100vw - 1rem) !important;
     width: calc(100vw - 1rem) !important;
   }
+
   .modal-body {
     padding: 1rem !important;
   }
+
   .modal-header {
     padding: 0.85rem 1rem !important;
   }
@@ -1062,8 +1072,17 @@ input[type="radio"] {
 
 /* Pulsing indicators */
 @keyframes pulse-dot-anim {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.15); }
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(1.15);
+  }
 }
 
 .pulse-dot {
@@ -1081,8 +1100,18 @@ input[type="radio"] {
   font-family: var(--font-mono) !important;
 }
 
-h1, h2, h3, h4, h5, h6,
-.h1, .h2, .h3, .h4, .h5, .h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1,
+.h2,
+.h3,
+.h4,
+.h5,
+.h6 {
   color: var(--text-main) !important;
   font-weight: 700;
   letter-spacing: -0.015em;
@@ -1090,13 +1119,19 @@ h1, h2, h3, h4, h5, h6,
 
 /* Responsive typography utilities */
 @media (max-width: 575.98px) {
-  h1, .h1 {
+
+  h1,
+  .h1 {
     font-size: 1.35rem !important;
   }
-  h2, .h2 {
+
+  h2,
+  .h2 {
     font-size: 1.2rem !important;
   }
-  h3, .h3 {
+
+  h3,
+  .h3 {
     font-size: 1.1rem !important;
   }
 }
@@ -1108,6 +1143,7 @@ h1, h2, h3, h4, h5, h6,
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -1117,13 +1153,11 @@ h1, h2, h3, h4, h5, h6,
   display: inline-block;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(
-    90deg,
-    #eef2f7 0%,
-    #f8fafc 42%,
-    #e2e8f0 56%,
-    #eef2f7 100%
-  );
+  background: linear-gradient(90deg,
+      #eef2f7 0%,
+      #f8fafc 42%,
+      #e2e8f0 56%,
+      #eef2f7 100%);
   background-size: 200% 100%;
   animation: zenSkeletonShimmer 1.5s ease-in-out infinite;
   border-radius: 6px;
@@ -1133,13 +1167,11 @@ h1, h2, h3, h4, h5, h6,
 .zen-skeleton-shimmer--header {
   height: 11px;
   border-radius: 5px;
-  background: linear-gradient(
-    90deg,
-    #e2e8f0 0%,
-    #f1f5f9 42%,
-    #cbd5e1 56%,
-    #e2e8f0 100%
-  );
+  background: linear-gradient(90deg,
+      #e2e8f0 0%,
+      #f1f5f9 42%,
+      #cbd5e1 56%,
+      #e2e8f0 100%);
   background-size: 200% 100%;
 }
 

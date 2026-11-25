@@ -1118,7 +1118,13 @@ export default function UserList() {
 
           <div className="mb-3">
             <label className="form-label fw-semibold text-dark small">Email Address</label>
-            <input className="form-control" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+            <input
+              className="form-control"
+              type="email"
+              value={editEmail}
+              readOnly
+              style={{ cursor: 'default', backgroundColor: '#fff' }}
+            />
           </div>
 
           <div className="mb-3">
@@ -1129,7 +1135,8 @@ export default function UserList() {
               placeholder="e.g. 9876543210"
               maxLength={10}
               value={editPhone}
-              onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              readOnly
+              style={{ cursor: 'default', backgroundColor: '#fff' }}
             />
           </div>
 

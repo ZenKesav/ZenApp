@@ -109,7 +109,13 @@ export default function EditUserModal({
 
         <div className="mb-3">
           <label className="form-label fw-semibold text-dark small">Email Address</label>
-          <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input
+            className="form-control"
+            type="email"
+            value={email}
+            readOnly
+            style={{ cursor: 'default', backgroundColor: '#fff' }}
+          />
         </div>
 
         <div className="mb-3">
@@ -119,7 +125,8 @@ export default function EditUserModal({
             type="text"
             maxLength={10}
             value={phone}
-            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            readOnly
+            style={{ cursor: 'default', backgroundColor: '#fff' }}
           />
         </div>
 

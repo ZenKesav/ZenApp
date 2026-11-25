@@ -142,11 +142,10 @@ export function isSupervisorUser(user) {
 export function isFullAccessUser(user) {
   if (!user) return true;
   const normRole = (user.role || '').toUpperCase().replace(/\s+/g, '_');
+  // System administrators, IT Admins, and Super Admins have full access to all factory stages
+  // Supervisors and Operators are scoped to their assigned stages!
   return (
     normRole.includes('ADMIN') ||
-    normRole.includes('QC') ||
-    normRole.includes('REPORT') ||
-    normRole.includes('VIEWER') ||
     normRole.includes('IT')
   );
 }
@@ -251,13 +250,13 @@ export function getUserAssignedStages(user) {
 }
 
 export function getSavedStageForUser(user) {
-  if (!user || isSupervisorUser(user)) return null;
+  if (!user) return null;
   const userKey = user.id || user.employee_id || user.email || 'user';
   return localStorage.getItem(`zenmeter_saved_stage_${userKey}`);
 }
 
 export function saveStageForUser(user, stageId) {
-  if (!user || isSupervisorUser(user)) return;
+  if (!user) return;
   const userKey = user.id || user.employee_id || user.email || 'user';
   localStorage.setItem(`zenmeter_saved_stage_${userKey}`, String(stageId));
   sessionStorage.setItem('zenmeter_selected_stage_id', String(stageId));

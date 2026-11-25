@@ -1,5 +1,7 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { useParams, Navigate, Link } from 'react-router-dom';
+import { useAuth } from '../../core/context/AuthContext';
+import { getUserAssignedStages, isFullAccessUser, saveStageForUser } from '../../utils/stageUtils';
 
 const Stage01Page = lazy(() => import('./stage01-pcb-code-loading/Stage01Page'));
 const Stage02Page = lazy(() => import('./stage02-nic-pcb-test/Stage02Page'));
@@ -13,12 +15,62 @@ const Stage11Page = lazy(() => import('./stage11-master-carton/Stage11Page'));
 
 export default function StageExecutionDispatcher() {
   const { stageId } = useParams();
+  const { user, setSelectedStageId } = useAuth();
 
   if (!stageId) {
     return <Navigate to="/select-stage" replace />;
   }
 
   const normalized = String(stageId).trim().toLowerCase();
+  const stageNumMatch = normalized.match(/(\d+)/);
+  const requestedStageNum = stageNumMatch ? parseInt(stageNumMatch[1], 10) : null;
+
+  const isFullAccess = isFullAccessUser(user);
+  const assignedStages = getUserAssignedStages(user);
+  const isAssigned = isFullAccess || assignedStages.some(s => Number(s.id || s.stage_number) === requestedStageNum);
+
+  useEffect(() => {
+    if (requestedStageNum && isAssigned) {
+      saveStageForUser(user, requestedStageNum);
+      if (setSelectedStageId) {
+        setSelectedStageId(requestedStageNum);
+      }
+    }
+  }, [requestedStageNum, isAssigned, user, setSelectedStageId]);
+
+  // If operator tries to access an unassigned stage directly by URL
+  if (!isAssigned && requestedStageNum) {
+    return (
+      <div className="container-fluid py-5 text-center">
+        <div className="card border-0 shadow-sm p-4 p-md-5 mx-auto rounded-4" style={{ maxWidth: '580px', backgroundColor: '#ffffff' }}>
+          <div className="mb-3">
+            <i className="ti ti-shield-lock text-warning display-4"></i>
+          </div>
+          <h4 className="fw-bold text-dark mb-2">Stage Access Restricted</h4>
+          <p className="text-muted small mb-3">
+            Your user account (<strong>{user?.employee_id || user?.name}</strong>) is not assigned to <strong>Stage {requestedStageNum < 10 ? `0${requestedStageNum}` : requestedStageNum}</strong>.
+          </p>
+          <div className="alert alert-secondary small text-start py-2.5 px-3 rounded-3 mb-4 border-0" style={{ backgroundColor: '#f1f5f9' }}>
+            <span className="fw-bold d-block mb-1.5 text-dark">Your Assigned Factory Stages:</span>
+            {assignedStages.length > 0 ? (
+              <div className="d-flex flex-wrap gap-1.5">
+                {assignedStages.map(s => (
+                  <span key={s.id} className="badge bg-primary-subtle text-primary border border-primary-subtle font-mono">
+                    Stage {s.id < 10 ? `0${s.id}` : s.id}: {s.name || s.shortName}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-muted fst-italic">No stages currently assigned.</span>
+            )}
+          </div>
+          <Link to="/select-stage" className="btn btn-primary btn-sm fw-semibold py-2 px-4 rounded-3 shadow-xs">
+            <i className="ti ti-layout-grid me-1.5"></i> Choose from My Assigned Stages
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Suspense fallback={<div className="p-4 text-center text-muted"><span className="spinner-border spinner-border-sm me-2"></span>Loading Stage Module...</div>}>

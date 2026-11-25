@@ -26,6 +26,7 @@ import SalesPurchaseChart from '../../../components/analysis/charts/SalesPurchas
 import CustomerOverviewChart from '../../../components/analysis/charts/CustomerOverviewChart';
 import { OperatorTrendChart, OperatorStageDistributionChart } from '../../../components/analysis/charts/OperatorAnalyticsChart';
 import { useAuth } from '../../../app/store';
+import { getUserAssignedStages } from '../../../utils/stageUtils';
 
 export function AdminDashboardView() {
   const [data, setData] = useState(null);
@@ -263,6 +264,7 @@ export function AdminDashboardView() {
 }
 
 export function SupervisorDashboardView() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -275,13 +277,26 @@ export function SupervisorDashboardView() {
       assignmentService.getAssignments()
     ]).then(([prod, assign]) => {
       setData(prod);
-      setAssignments(assign.assignments || []);
+      let rawAssignments = assign.assignments || [];
+      // Filter assignments to supervisor's assigned stages if supervisor
+      const normRole = (user?.role || '').toUpperCase();
+      if (normRole.includes('SUPERVISOR') && !normRole.includes('ADMIN')) {
+        const assigned = getUserAssignedStages(user);
+        const assignedIds = new Set(assigned.map(s => Number(s.id || s.stage_number)));
+        if (assignedIds.size > 0) {
+          rawAssignments = rawAssignments.filter(a => {
+            const sid = Number(a.stage_id || a.stage_number);
+            return !sid || assignedIds.has(sid);
+          });
+        }
+      }
+      setAssignments(rawAssignments);
       setLoading(false);
     }).catch(err => {
       console.error(err);
       setLoading(false);
     });
-  }, []);
+  }, [user]);
 
   if (loading) return <DashboardSkeleton cards={4} columns={6} />;
 

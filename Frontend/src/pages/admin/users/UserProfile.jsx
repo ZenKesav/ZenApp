@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../app/store';
 import { userService } from '../../../services/admin/userService';
 import { showSuccessAlert, showErrorAlert } from '../../../utils/swal';
+import { getUserAssignedStages, ALL_STAGE_MODULES } from '../../../utils/stageUtils';
 
 const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150';
 
@@ -335,15 +336,6 @@ export default function UserProfile() {
 
   return (
     <>
-      <div className="row mb-4">
-        <div className="col-12">
-          <h1 className="fs-3 mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-            <i className="ti ti-user-circle text-primary"></i>
-            User Profile
-          </h1>
-        </div>
-      </div>
-
       <div className="row g-4">
         <div className="col-12">
           <div className="card shadow-sm border-0">
@@ -360,17 +352,47 @@ export default function UserProfile() {
                   {/* Left Column: Avatar Preview & Upload Trigger */}
                   <div className="col-lg-4 text-center border-end-lg pe-lg-4">
                     <div className="mb-3 position-relative d-inline-block">
-                      <img
-                        src={avatar}
-                        alt={name || 'Profile'}
-                        className="rounded-circle border border-4 border-primary shadow-sm"
-                        style={{ width: '140px', height: '140px', objectFit: 'cover' }}
-                      />
+                      {/* Avatar Image with outer glow ring */}
+                      <div
+                        className="rounded-circle p-1 d-inline-block"
+                        style={{
+                          background: 'linear-gradient(135deg, #e66239 0%, #ff8c5a 100%)',
+                          boxShadow: '0 4px 14px rgba(230, 98, 57, 0.25)'
+                        }}
+                      >
+                        <img
+                          src={avatar}
+                          alt={name || 'Profile'}
+                          className="rounded-circle border border-2 border-white shadow-sm d-block"
+                          style={{ width: '136px', height: '136px', objectFit: 'cover' }}
+                        />
+                      </div>
+
+                      {/* Camera Button with User-Friendly Modern UI/UX */}
                       <label
                         htmlFor="profile-avatar-input"
-                        className="position-absolute bottom-0 end-0 bg-primary text-white rounded-circle p-2.5 shadow-sm border border-white"
-                        style={{ cursor: 'pointer', transition: 'transform 0.2s ease' }}
-                        title="Click to Upload & Crop Profile Picture"
+                        className="position-absolute d-inline-flex align-items-center justify-content-center text-white rounded-circle shadow"
+                        style={{
+                          right: '2px',
+                          bottom: '4px',
+                          width: '40px',
+                          height: '40px',
+                          backgroundColor: '#e66239',
+                          border: '3px solid #ffffff',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                          boxShadow: '0 3px 10px rgba(0, 0, 0, 0.25)'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.12)';
+                          e.currentTarget.style.backgroundColor = '#d3542b';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = '#e66239';
+                        }}
+                        title="Upload & Crop Profile Picture"
+                        aria-label="Upload & Crop Profile Picture"
                       >
                         <i className="ti ti-camera fs-5"></i>
                         <input
@@ -397,9 +419,19 @@ export default function UserProfile() {
 
                   {/* Right Column: User Account Details */}
                   <div className="col-lg-8">
-                    <h6 className="fw-bold text-uppercase text-primary small mb-3 border-bottom pb-2">
-                      <i className="ti ti-edit me-1"></i> Account Details
-                    </h6>
+                    <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 border-bottom pb-2">
+                      <h6 className="fw-bold text-uppercase text-primary small mb-0">
+                        <i className="ti ti-edit me-1"></i> Account Details
+                      </h6>
+                      <button
+                        type="submit"
+                        className="btn btn-primary btn-sm px-3 py-1.5 fw-semibold shadow-xs d-inline-flex align-items-center gap-1.5 rounded-2"
+                        disabled={savingProfile || !hasProfileChanged}
+                      >
+                        <i className={`ti ${savingProfile ? 'ti-loader rotate' : 'ti-refresh'}`}></i>
+                        <span>{savingProfile ? 'Saving Details...' : 'Update Profile Details'}</span>
+                      </button>
+                    </div>
 
                     <div className="row g-3">
                       <div className="col-md-6">
@@ -445,106 +477,198 @@ export default function UserProfile() {
                           placeholder="e.g. 9876543210"
                         />
                       </div>
+                    </div>
+                  </div>
 
-                      {/* Assigned Stage Specification */}
-                      <div className="col-12">
-                        <label className="form-label fw-semibold text-dark small d-flex justify-content-between align-items-center mb-1.5">
-                          <span className="d-flex align-items-center gap-1.5">
-                            <i className="ti ti-subtask text-primary"></i>
-                            Assigned Stage Specification
-                          </span>
-                          {isAdmin ? (
-                            <span className="badge bg-primary-subtle text-primary border border-primary-subtle font-mono fw-normal">
-                              Full Factory Authorization
-                            </span>
-                          ) : (
-                            <span className="badge bg-success-subtle text-success border border-success-subtle font-mono fw-normal">
-                              {user?.assigned_stage
-                                ? `${Array.from(new Set(user.assigned_stage.split(',').map(s => s.trim()).filter(Boolean))).length} Stages Configured`
-                                : user?.stage_id
-                                  ? '1 Stage Configured'
-                                  : 'General Access'}
-                            </span>
-                          )}
-                        </label>
+                  {/* Full Width (col-12) Row Covering Under Left Avatar: Assigned Production Line Stages */}
+                  <div className="col-12 pt-2">
+                    {(() => {
+                      const normRole = (user?.role || '').toUpperCase();
+                      const isAdminRole = normRole.includes('ADMIN') || normRole.includes('IT');
+                      const isQcRole = normRole.includes('QC');
+                      const isSupervisorRole = normRole.includes('SUPERVISOR');
+                      const userStages = getUserAssignedStages(user);
 
-                        {isAdmin ? (
-                          <div className="p-2.5 bg-light rounded-3 border d-flex align-items-center gap-2">
-                            <span className="badge bg-primary text-white font-mono px-2 py-1">ALL STAGES</span>
-                            <span className="text-dark small fw-medium">All Factory Production Stages (Full Factory Pipeline Authorization)</span>
-                          </div>
-                        ) : user?.assigned_stage ? (
-                          <div className="p-3 bg-light-subtle rounded-3 border">
-                            <div className="row g-2">
-                              {Array.from(new Set(user.assigned_stage.split(',').map(s => s.trim()).filter(Boolean))).map((stgStr, idx) => {
-                                let stageNum = null;
-                                let stageName = stgStr;
-                                const fullMatch = stgStr.match(/^(?:stage\s*)?(\d+)(?:\s*stage)?\s*[-–:]\s*(.+)$/i);
-                                if (fullMatch) {
-                                  stageNum = fullMatch[1];
-                                  stageName = fullMatch[2].trim();
-                                } else {
-                                  const numOnlyMatch = stgStr.match(/^(?:stage\s*)?(\d+)(?:\s*stage)?$/i);
-                                  if (numOnlyMatch) {
-                                    stageNum = numOnlyMatch[1];
-                                    stageName = `Stage ${stageNum}`;
-                                  }
-                                }
+                      // Stage-specific icons matching the reference image
+                      const getStageIcon = (sId) => {
+                        const n = Number(sId);
+                        switch (n) {
+                          case 1: return 'ti-code';
+                          case 2: return 'ti-wifi';
+                          case 3: return 'ti-box';
+                          case 4: return 'ti-printer';
+                          case 5: return 'ti-package';
+                          case 6: return 'ti-bolt';
+                          case 7: return 'ti-shield-check';
+                          case 8: return 'ti-cpu';
+                          case 9: return 'ti-box-seam';
+                          case 10: return 'ti-package';
+                          case 11: return 'ti-box';
+                          default: return 'ti-subtask';
+                        }
+                      };
 
-                                return (
-                                  <div key={idx} className="col-12 col-sm-6 col-md-4">
-                                    <div
-                                      className="d-flex align-items-center bg-white border border-secondary-subtle rounded-2 px-2.5 py-2 shadow-2xs h-100"
-                                      style={{ minHeight: '44px' }}
-                                    >
-                                      {stageNum ? (
-                                        <span
-                                          className="badge text-white font-mono fw-bold px-2 py-1 rounded me-2 flex-shrink-0"
-                                          style={{
-                                            backgroundColor: '#E66239',
-                                            fontSize: '0.72rem',
-                                            letterSpacing: '0.3px',
-                                            minWidth: '56px',
-                                            textAlign: 'center'
-                                          }}
-                                        >
-                                          Stage {stageNum}
-                                        </span>
-                                      ) : (
-                                        <span
-                                          className="badge bg-secondary-subtle text-secondary font-mono fw-bold px-2 py-1 rounded me-2 flex-shrink-0"
-                                          style={{ fontSize: '0.72rem' }}
-                                        >
-                                          <i className="ti ti-subtask"></i>
-                                        </span>
-                                      )}
-                                      <span
-                                        className="text-dark fw-medium small lh-sm"
-                                        title={stageName}
-                                        style={{ fontSize: '0.8125rem' }}
-                                      >
-                                        {stageName}
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                      return (
+                        <div className="card border rounded-3 overflow-hidden shadow-2xs" style={{ borderColor: '#e5e7eb', backgroundColor: '#ffffff' }}>
+                          {/* Header Bar matching image layout */}
+                          <div className="p-3 bg-white border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <div className="d-flex align-items-center gap-2">
+                              <div
+                                className="rounded-2 d-flex align-items-center justify-content-center text-white"
+                                style={{ width: '32px', height: '32px', backgroundColor: '#e66239' }}
+                              >
+                                <i className="ti ti-layout-grid fs-5"></i>
+                              </div>
+                              <div>
+                                <h6 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>Assigned Production Line Stages</h6>
+                                <small className="text-muted text-xs">
+                                  {isAdminRole
+                                    ? 'Full factory enterprise authorization across all lines'
+                                    : isQcRole
+                                      ? 'Authorized quality control & inspection stations'
+                                      : isSupervisorRole
+                                        ? 'Supervised line stations and operator workflows'
+                                        : 'Assigned manufacturing & testing workbench stations'}
+                                </small>
+                              </div>
+                            </div>
+
+                            <div>
+                              {isAdminRole ? (
+                                <span
+                                  className="badge font-mono px-3 py-1.5 rounded-pill text-white shadow-2xs fw-semibold"
+                                  style={{ backgroundColor: '#e66239', fontSize: '11px' }}
+                                >
+                                  <i className="ti ti-check me-1"></i> Full Factory Authorization
+                                </span>
+                              ) : isQcRole ? (
+                                <span
+                                  className="badge font-mono px-3 py-1.5 rounded-pill text-white shadow-2xs fw-semibold"
+                                  style={{ backgroundColor: '#e66239', fontSize: '11px' }}
+                                >
+                                  <i className="ti ti-check me-1"></i> Quality Audit Authorization
+                                </span>
+                              ) : (
+                                <span
+                                  className="badge font-mono px-3 py-1.5 rounded-pill text-white shadow-2xs fw-semibold"
+                                  style={{ backgroundColor: '#e66239', fontSize: '11px' }}
+                                >
+                                  <i className="ti ti-check me-1"></i>
+                                  {userStages.length} {userStages.length === 1 ? 'Stage Assigned' : 'Stages Assigned'}
+                                </span>
+                              )}
                             </div>
                           </div>
-                        ) : (
-                          <div className="p-2.5 bg-light rounded-3 border text-muted small font-mono">
-                            {user?.stage_id ? `Stage ${user.stage_id}` : 'General Factory Operations'}
-                          </div>
-                        )}
-                      </div>
-                    </div>
 
-                    <div className="d-flex justify-content-end mt-4 pt-3 border-top">
-                      <button type="submit" className="btn btn-primary px-4 py-2 fw-semibold shadow-sm" disabled={savingProfile || !hasProfileChanged}>
-                        <i className="ti ti-check me-1"></i>
-                        {savingProfile ? 'Saving Details...' : 'Update Profile Details'}
-                      </button>
-                    </div>
+                          {/* Body: Stage Grid Cards - Spanning across full width */}
+                          <div className="p-3" style={{ backgroundColor: '#fafbfc' }}>
+                            {isAdminRole ? (
+                              <div className="p-3 bg-white rounded-3 border d-flex align-items-center justify-content-between flex-wrap gap-3" style={{ borderColor: '#e5e7eb' }}>
+                                <div className="d-flex align-items-center gap-3">
+                                  <span
+                                    className="badge text-white font-mono px-3 py-1.5 rounded-pill fw-bold"
+                                    style={{ backgroundColor: '#e66239', fontSize: '12px' }}
+                                  >
+                                    ALL STAGES
+                                  </span>
+                                  <div>
+                                    <div className="fw-bold text-dark small">All Factory Production Stages (Stages 01 – 11)</div>
+                                    <small className="text-muted text-xs">Full factory pipeline authorization & administrative management</small>
+                                  </div>
+                                </div>
+                                <span
+                                  className="badge rounded-pill fw-medium"
+                                  style={{ backgroundColor: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', fontSize: '11px' }}
+                                >
+                                  Active
+                                </span>
+                              </div>
+                            ) : userStages.length > 0 ? (
+                              <div className="row g-3">
+                                {userStages.map((stg) => {
+                                  const paddedNum = String(stg.id).padStart(2, '0');
+                                  const stgIcon = getStageIcon(stg.id);
+
+                                  return (
+                                    <div key={stg.id} className="col-12 col-sm-6 col-md-4 col-lg-3 col-xl-3">
+                                      <div
+                                        className="bg-white rounded-3 p-3 border shadow-2xs h-100 d-flex flex-column justify-content-between"
+                                        style={{ borderColor: '#e5e7eb', minHeight: '96px' }}
+                                      >
+                                        {/* Top Row: Pill Badge 'Stage 04' & Green Pill 'Active' */}
+                                        <div className="d-flex align-items-center justify-content-between mb-2">
+                                          <span
+                                            className="badge text-white font-mono fw-bold px-2.5 py-1 rounded-pill"
+                                            style={{
+                                              backgroundColor: '#e66239',
+                                              fontSize: '11px',
+                                              letterSpacing: '0.3px'
+                                            }}
+                                          >
+                                            Stage {paddedNum}
+                                          </span>
+                                          <span
+                                            className="badge rounded-pill fw-medium px-2 py-0.5 font-mono"
+                                            style={{
+                                              backgroundColor: '#ecfdf5',
+                                              color: '#059669',
+                                              border: '1px solid #a7f3d0',
+                                              fontSize: '10.5px'
+                                            }}
+                                          >
+                                            Active
+                                          </span>
+                                        </div>
+
+                                        {/* Middle Row: Circular Icon + Stage Name */}
+                                        <div className="d-flex align-items-center gap-2 mb-2">
+                                          <div
+                                            className="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0"
+                                            style={{
+                                              width: '30px',
+                                              height: '30px',
+                                              backgroundColor: '#e66239'
+                                            }}
+                                          >
+                                            <i className={`ti ${stgIcon} fs-6`}></i>
+                                          </div>
+                                          <span
+                                            className="fw-bold text-dark small text-truncate"
+                                            title={stg.name}
+                                            style={{ fontSize: '12.5px' }}
+                                          >
+                                            {stg.name}
+                                          </span>
+                                        </div>
+
+                                        {/* Bottom Row: Centered Station Pin */}
+                                        <div
+                                          className="d-flex align-items-center justify-content-center pt-2 mt-auto border-top font-mono text-xs"
+                                          style={{ borderColor: '#f1f5f9', color: '#64748b' }}
+                                        >
+                                          <span className="d-inline-flex align-items-center gap-1">
+                                            <i className="ti ti-map-pin" style={{ color: '#e66239' }}></i>
+                                            <span className="fw-semibold text-dark">
+                                              {stg.hardwareStation || `Station - ${paddedNum}`}
+                                            </span>
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="p-4 text-center bg-white rounded-3 border text-muted" style={{ borderColor: '#e5e7eb' }}>
+                                <i className="ti ti-alert-circle fs-3 text-warning mb-2 d-block"></i>
+                                <span className="fw-semibold text-dark small d-block">No Stages Currently Assigned</span>
+                                <small className="text-muted text-xs">Please contact your System Administrator to allocate production line stages.</small>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </form>
