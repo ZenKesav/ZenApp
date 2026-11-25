@@ -6,6 +6,7 @@ import { jigService, stageManagementService, supervisorTestService, qcTestServic
 import { showWarningAlert, showErrorAlert, showSuccessAlert } from '../../../utils/swal';
 import { Modal } from '../../../components/CommonComponents';
 import MeterBodyPrintConsole from '../stage09-meter-box-print/MeterBodyPrintConsole';
+import laserWebSerialService from '../../../services/common/laserWebSerialService';
 
 // SVG QR Code Generator Component for Printable NIC Labels
 function QRCodeSVG({ value, size = 110 }) {
@@ -91,6 +92,150 @@ function QRCodeSVG({ value, size = 110 }) {
         )
       )}
     </svg>
+  );
+}
+
+// COM Port Settings Panel Component matching Stage 9 COM Port Settings Panel
+function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelContent, showHeader = false }) {
+  const BAUD_OPTIONS = ['110', '300', '600', '1200', '2400', '4800', '9600', '14400', '19200', '28800', '38400', '56000', '57600', '115200', '230400'];
+  const DATA_BITS_OPTS = ['5', '6', '7', '8'];
+  const PARITY_OPTS = ['None', 'Even', 'Odd', 'Mark', 'Space'];
+  const STOP_BITS_OPTS = ['1', '1.5', '2'];
+  const PARITY_ERROR_OPTS = ['(ignore)', "35 ('#')", "42 ('*')", "63 ('?')", "248 ('ø')"];
+
+  return (
+    <div className="p-1">
+      {showHeader && (
+        <div className="d-flex align-items-center justify-content-between mb-2.5 pb-1.5 border-bottom border-secondary-subtle">
+          <span className="fw-semibold text-secondary small text-uppercase" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>
+            <i className="ti ti-adjustments me-1 text-danger"></i> {title || 'USB PORT - COM PORT SETTINGS'}
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              className="btn btn-xs btn-link text-muted p-0 text-decoration-none"
+              onClick={onClose}
+              title="Close Settings"
+              style={{ fontSize: '14px', lineHeight: 1 }}
+            >
+              <i className="ti ti-x"></i>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 1. Send/Receive on Comm. Channel */}
+      {commChannelContent && (
+        <div className="mb-3 pb-3 border-bottom border-secondary-subtle">
+          <label className="form-label fw-bold text-dark mb-2 d-block" style={{ fontSize: '12px' }}>
+            Send/Receive on Comm. Channel
+          </label>
+          {commChannelContent}
+        </div>
+      )}
+
+      {/* 2. COM Port Settings */}
+      <div className="fw-bold text-dark mb-2.5" style={{ fontSize: '12px' }}>
+        COM Port Settings
+      </div>
+      <div className="row g-3">
+        {/* Left Column: Baud Rate, Parity, Parity Error Char. */}
+        <div className="col-12 col-sm-6">
+          <div className="mb-2.5">
+            <label className="form-label fw-medium text-dark mb-1" style={{ fontSize: '11.5px' }}>
+              Baud Rate
+            </label>
+            <select
+              className="form-select form-select-sm bg-white border-secondary-subtle"
+              style={{ fontSize: '12px', height: '34px' }}
+              value={config.baudRate}
+              onChange={(e) => onChange('baudRate', e.target.value)}
+            >
+              {BAUD_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-2.5">
+            <label className="form-label fw-medium text-dark mb-1" style={{ fontSize: '11.5px' }}>
+              Parity
+            </label>
+            <select
+              className="form-select form-select-sm bg-white border-secondary-subtle"
+              style={{ fontSize: '12px', height: '34px' }}
+              value={config.parity}
+              onChange={(e) => onChange('parity', e.target.value)}
+            >
+              {PARITY_OPTS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-1">
+            <label className="form-label fw-medium text-dark mb-1" style={{ fontSize: '11.5px' }}>
+              Parity Error Char.
+            </label>
+            <select
+              className="form-select form-select-sm bg-white border-secondary-subtle"
+              style={{ fontSize: '12px', height: '34px' }}
+              value={config.parityErrorChar}
+              onChange={(e) => onChange('parityErrorChar', e.target.value)}
+            >
+              {PARITY_ERROR_OPTS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Right Column: Data Bits, Stop Bits */}
+        <div className="col-12 col-sm-6">
+          <div className="mb-2.5">
+            <label className="form-label fw-medium text-dark mb-1" style={{ fontSize: '11.5px' }}>
+              Data Bits
+            </label>
+            <select
+              className="form-select form-select-sm bg-white border-secondary-subtle"
+              style={{ fontSize: '12px', height: '34px' }}
+              value={config.dataBits}
+              onChange={(e) => onChange('dataBits', e.target.value)}
+            >
+              {DATA_BITS_OPTS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-2.5">
+            <label className="form-label fw-medium text-dark mb-1" style={{ fontSize: '11.5px' }}>
+              Stop Bits
+            </label>
+            <select
+              className="form-select form-select-sm bg-white border-secondary-subtle"
+              style={{ fontSize: '12px', height: '34px' }}
+              value={config.stopBits}
+              onChange={(e) => onChange('stopBits', e.target.value)}
+            >
+              {STOP_BITS_OPTS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -359,6 +504,63 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
   const [detailedPorts, setDetailedPorts] = useState([]);
   const [selectedPort, setSelectedPort] = useState('');
 
+  // COM Port Settings Panel State & Persistence
+  const [showReceiveSettings, setShowReceiveSettings] = useState(false);
+  const [isConnectingPort, setIsConnectingPort] = useState(false);
+  const [jigSerialConfig, setJigSerialConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('zenmeter_jig_config_stage4');
+      if (saved) return JSON.parse(saved);
+    } catch (e) { }
+    return {
+      baudRate: '9600',
+      dataBits: '8',
+      parity: 'None',
+      stopBits: '1',
+      parityErrorChar: "63 ('?')"
+    };
+  });
+
+  const updateJigConfig = (key, value) => {
+    setJigSerialConfig(prev => {
+      const updated = { ...prev, [key]: value };
+      try {
+        localStorage.setItem('zenmeter_jig_config_stage4', JSON.stringify(updated));
+      } catch (e) { }
+      return updated;
+    });
+  };
+
+  // Laser Port State & Persistence
+  const [laserConnected, setLaserConnected] = useState(false);
+  const [laserDeviceName, setLaserDeviceName] = useState('');
+  const [selectedLaserPort, setSelectedLaserPort] = useState('');
+  const [showLaserSettings, setShowLaserSettings] = useState(false);
+  const [isConnectingLaserPort, setIsConnectingLaserPort] = useState(false);
+  const [laserSerialConfig, setLaserSerialConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('zenmeter_laser_config_stage4');
+      if (saved) return JSON.parse(saved);
+    } catch (e) { }
+    return {
+      baudRate: '9600',
+      dataBits: '8',
+      parity: 'None',
+      stopBits: '1',
+      parityErrorChar: "63 ('?')"
+    };
+  });
+
+  const updateLaserConfig = (key, value) => {
+    setLaserSerialConfig(prev => {
+      const updated = { ...prev, [key]: value };
+      try {
+        localStorage.setItem('zenmeter_laser_config_stage4', JSON.stringify(updated));
+      } catch (e) { }
+      return updated;
+    });
+  };
+
   const wsRef = useRef(null);
   const nonUsbPattern = /(bluetooth|blth|buds|airpods|incoming-port|rfcomm|debug-console)/i;
 
@@ -508,23 +710,174 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     }
   };
 
-  // Helper to auto-connect Optical Port on backend
-  const autoConnectPort = async (portToConnect) => {
-    if (!portToConnect) return;
+  // Connect USB COM Port on backend & persist
+  const handleConnectJigPort = async (portToConnect = selectedPort) => {
+    if (!portToConnect) {
+      showWarningAlert('No Port Selected', 'Please select a COM port to connect.');
+      return;
+    }
+    setIsConnectingPort(true);
     try {
-      const res = await jigService.connectHardware({ path: portToConnect });
+      if (isDemoMode) {
+        setUsbConnected(true);
+        setUsbDeviceName(portToConnect);
+        setSelectedPort(portToConnect);
+        setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
+        setShowReceiveSettings(false);
+        return;
+      }
+
+      const res = await jigService.connectHardware({
+        path: portToConnect,
+        baudRate: jigSerialConfig.baudRate,
+        dataBits: jigSerialConfig.dataBits,
+        parity: jigSerialConfig.parity.toLowerCase(),
+        stopBits: jigSerialConfig.stopBits
+      });
+
       if (res.success && res.data && res.data.connected) {
         setUsbConnected(true);
-        setUsbDeviceName(res.data.device || portToConnect);
+        const displayName = res.data.device || res.data.details?.friendlyName || portToConnect;
+        setUsbDeviceName(displayName);
+        setSelectedPort(portToConnect);
+        try {
+          localStorage.setItem('zenmeter_jig_port_stage4', portToConnect);
+        } catch (e) { }
         setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
+        setShowReceiveSettings(false);
       } else {
         setUsbConnected(false);
-        setUsbDeviceName('');
+        showErrorAlert('Connection Failed', res.message || res.data?.error?.message || 'Could not connect to selected COM port.');
       }
     } catch (err) {
-      console.warn('[Frontend] Auto connect notice:', err.message);
+      setUsbConnected(false);
+      showErrorAlert('Connection Error', err.message || 'Error connecting to COM port.');
+    } finally {
+      setIsConnectingPort(false);
+    }
+  };
+
+  // Disconnect USB COM Port on backend
+  const handleDisconnectJigPort = async () => {
+    setIsConnectingPort(true);
+    try {
+      if (isDemoMode) {
+        setUsbConnected(false);
+        setUsbDeviceName('');
+        return;
+      }
+      await jigService.disconnectHardware();
       setUsbConnected(false);
       setUsbDeviceName('');
+      try {
+        localStorage.removeItem('zenmeter_jig_port_stage4');
+      } catch (e) { }
+    } catch (err) {
+      showErrorAlert('Disconnect Error', err.message || 'Error disconnecting COM port.');
+    } finally {
+      setIsConnectingPort(false);
+    }
+  };
+
+  // Pair from Windows Device Manager via browser Web Serial API dialog
+  const handlePairDeviceManagerPort = async () => {
+    if (typeof navigator !== 'undefined' && 'serial' in navigator) {
+      try {
+        await navigator.serial.requestPort();
+        await fetchAvailableUsbPorts();
+      } catch (err) {
+        if (err.name !== 'NotFoundError') {
+          console.warn('[Stage4] WebSerial device manager selection:', err);
+        }
+      }
+    } else {
+      showWarningAlert('Device Manager Ports', 'System COM & LPT ports are automatically scanned and listed in the dropdown.');
+    }
+  };
+
+  // Connect Laser Port
+  const handleConnectLaserPort = async (portToConnect = selectedLaserPort) => {
+    if (!portToConnect) {
+      showWarningAlert('No Port Selected', 'Please select a Laser COM port to connect.');
+      return;
+    }
+    setIsConnectingLaserPort(true);
+    try {
+      if (isDemoMode) {
+        setLaserConnected(true);
+        setLaserDeviceName(portToConnect);
+        setSelectedLaserPort(portToConnect);
+        setShowLaserSettings(false);
+        return;
+      }
+
+      if (laserWebSerialService.hasNativeSerial()) {
+        try {
+          const eff = {
+            baudRate: Number(laserSerialConfig.baudRate) || 9600,
+            dataBits: Number(laserSerialConfig.dataBits) || 8,
+            parity: laserSerialConfig.parity.toLowerCase(),
+            stopBits: Number(laserSerialConfig.stopBits) || 1
+          };
+          const paired = await laserWebSerialService.getPairedPorts();
+          const matched = paired.find(p => p.friendlyName === portToConnect || p.path === portToConnect);
+          if (matched && matched.port) {
+            await laserWebSerialService.connectPort(matched.port, eff);
+          }
+        } catch (e) {
+          console.warn('[Stage4] WebSerial laser connect notice:', e);
+        }
+      }
+
+      setLaserConnected(true);
+      const matchedDp = detailedPorts.find(dp => dp.path === portToConnect);
+      const displayName = matchedDp?.friendlyName || matchedDp?.shortName || portToConnect;
+      setLaserDeviceName(displayName);
+      setSelectedLaserPort(portToConnect);
+      try {
+        localStorage.setItem('zenmeter_laser_port_stage4', portToConnect);
+      } catch (e) { }
+      setShowLaserSettings(false);
+    } catch (err) {
+      setLaserConnected(false);
+      showErrorAlert('Laser Connect Error', err.message || 'Error connecting to Laser COM port.');
+    } finally {
+      setIsConnectingLaserPort(false);
+    }
+  };
+
+  // Disconnect Laser Port
+  const handleDisconnectLaserPort = async () => {
+    setIsConnectingLaserPort(true);
+    try {
+      if (laserWebSerialService.connected) {
+        await laserWebSerialService.disconnect();
+      }
+      setLaserConnected(false);
+      setLaserDeviceName('');
+      try {
+        localStorage.removeItem('zenmeter_laser_port_stage4');
+      } catch (e) { }
+    } catch (err) {
+      showErrorAlert('Disconnect Error', err.message || 'Error disconnecting Laser COM port.');
+    } finally {
+      setIsConnectingLaserPort(false);
+    }
+  };
+
+  // Pair Laser Port from Windows Device Manager
+  const handlePairLaserDeviceManagerPort = async () => {
+    if (typeof navigator !== 'undefined' && 'serial' in navigator) {
+      try {
+        await navigator.serial.requestPort();
+        await fetchAvailableUsbPorts();
+      } catch (err) {
+        if (err.name !== 'NotFoundError') {
+          console.warn('[Stage4] Laser device manager selection:', err);
+        }
+      }
+    } else {
+      showWarningAlert('Device Manager Ports', 'System COM & LPT ports are automatically scanned and listed in the dropdown.');
     }
   };
 
@@ -551,33 +904,100 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       const filteredDetailed = rawDetailed.map(dp => ({
         ...dp,
         path: cleanPath(dp.path),
-        friendlyName: cleanPath(dp.friendlyName)
+        friendlyName: cleanPath(dp.friendlyName || dp.shortName || dp.path)
       })).filter(dp => !nonUsbPattern.test(dp.path || dp.friendlyName || dp.label || ''));
 
       setAvailablePorts(filteredPorts);
       setDetailedPorts(filteredDetailed);
 
-      if (filteredPorts.length > 0) {
-        let portToUse = selectedPort;
-        if (!selectedPort || !filteredPorts.includes(selectedPort)) {
-          portToUse = filteredPorts[0];
-          setSelectedPort(portToUse);
-        }
-        if (!usbConnected) {
-          await autoConnectPort(portToUse);
-        }
-      } else {
-        if (usbConnected) {
+      // Preserve existing connection if port is still detected in Device Manager
+      if (usbConnected && selectedPort) {
+        const stillPresent = filteredPorts.some(p => p.toLowerCase() === selectedPort.toLowerCase());
+        if (!stillPresent) {
+          // Hardware cable physically removed from system / Device Manager
           setUsbConnected(false);
           setUsbDeviceName('');
           setTestState('IDLE');
         }
-        setSelectedPort('');
+      } else if (!selectedPort && filteredPorts.length > 0) {
+        const saved = localStorage.getItem('zenmeter_jig_port_stage4');
+        if (saved && filteredPorts.includes(saved)) {
+          setSelectedPort(saved);
+        } else {
+          setSelectedPort(filteredPorts[0]);
+        }
+      }
+
+      if (laserConnected && selectedLaserPort) {
+        const stillPresent = filteredPorts.some(p => p.toLowerCase() === selectedLaserPort.toLowerCase());
+        if (!stillPresent) {
+          setLaserConnected(false);
+          setLaserDeviceName('');
+        }
+      } else if (!selectedLaserPort && filteredPorts.length > 0) {
+        const savedLaser = localStorage.getItem('zenmeter_laser_port_stage4');
+        if (savedLaser && filteredPorts.includes(savedLaser)) {
+          setSelectedLaserPort(savedLaser);
+        }
       }
     } catch (e) {
       console.warn('[Frontend] Port scan notice:', e.message);
     }
   };
+
+  // Query hardware port status on mount - strict persistence across reloads
+  useEffect(() => {
+    if (isDemoMode) return;
+
+    let isMounted = true;
+    const checkInitialPortStatus = async () => {
+      try {
+        // 1. Check if backend is already connected
+        const statusRes = await jigService.getJigStatus();
+        if (isMounted && statusRes && statusRes.success && statusRes.data && statusRes.data.connected) {
+          const activePort = statusRes.data.port;
+          const activeName = statusRes.data.device || statusRes.data.details?.friendlyName || activePort;
+          setUsbConnected(true);
+          setSelectedPort(activePort);
+          setUsbDeviceName(activeName);
+          setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
+        }
+
+        // 2. Scan ports and check saved port
+        const portsRes = await jigService.listUsbPorts();
+        const rawPorts = portsRes.ports || [];
+        const rawDetailed = portsRes.detailedPorts || rawPorts.map(p => ({ path: p, friendlyName: p }));
+        if (isMounted) {
+          setAvailablePorts(rawPorts);
+          setDetailedPorts(rawDetailed);
+        }
+
+        const savedPort = localStorage.getItem('zenmeter_jig_port_stage4');
+        if (savedPort && rawPorts.includes(savedPort)) {
+          if (isMounted && !usbConnected) {
+            setSelectedPort(savedPort);
+            await handleConnectJigPort(savedPort);
+          }
+        } else if (rawPorts.length > 0 && isMounted && !selectedPort) {
+          setSelectedPort(rawPorts[0]);
+        }
+
+        // 3. Restore Laser port connection across reloads
+        const savedLaser = localStorage.getItem('zenmeter_laser_port_stage4');
+        if (savedLaser && isMounted) {
+          setSelectedLaserPort(savedLaser);
+          const matchedDp = rawDetailed.find(dp => dp.path === savedLaser);
+          setLaserDeviceName(matchedDp?.friendlyName || matchedDp?.shortName || savedLaser);
+          setLaserConnected(true);
+        }
+      } catch (err) {
+        console.warn('[Stage4] Initial port check notice:', err.message);
+      }
+    };
+
+    checkInitialPortStatus();
+    return () => { isMounted = false; };
+  }, [isDemoMode]);
 
   // Check duplicate IMEIs in DB
   const checkDbDuplicates = async (channelsList) => {
@@ -1518,88 +1938,94 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       </div>
 
       {/* Top Header Bar */}
-      <div className="row mb-4">
+      <div className="row mb-3">
         <div className="col-12">
-          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 bg-white p-4 rounded-3 shadow-sm border">
-            <div>
-              <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                <h1 className="fs-3 mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-                  <i className="ti ti-tools text-primary"></i>
-                  <span>Jig Test Console</span>
-                  {isDemoMode && (
-                    <span className="badge bg-warning text-dark font-mono fs-6 px-2.5 py-1 shadow-2xs ms-1">
-                      <i className="ti ti-flask me-1"></i>DEMO TEST
-                    </span>
-                  )}
-                </h1>
+          <div className="p-3 bg-white rounded-3 shadow-sm border d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+            <div className="d-flex align-items-center gap-3 flex-wrap">
+              {/* NIC Receive Port Card */}
+              <div
+                className="p-2.5 px-3 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
+                style={{ minWidth: '310px', gap: '14px' }}
+              >
+                <div className="d-flex align-items-center" style={{ gap: '12px' }}>
+                  <div
+                    className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
+                    style={{ width: '40px', height: '40px' }}
+                  >
+                    <i className={`ti ${usbConnected ? 'ti-plug-connected text-success' : 'ti-usb'} fs-4`}></i>
+                  </div>
+                  <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
+                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13.5px', lineHeight: 1.2 }}>
+                      NIC Receive Port
+                    </div>
+                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '6px', fontSize: '11.5px' }}>
+                      <span
+                        className={`rounded-circle d-inline-block flex-shrink-0 ${usbConnected ? 'bg-success' : 'bg-danger'}`}
+                        style={{ width: '7px', height: '7px' }}
+                      ></span>
+                      <span className={`fw-medium ${usbConnected ? 'text-success' : 'text-muted'}`}>
+                        {usbConnected
+                          ? `${detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName || detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName || usbDeviceName || selectedPort || 'Connected'} (${jigSerialConfig.baudRate} Baud)`
+                          : 'Disconnected'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary px-2.5 py-1 fw-semibold shadow-xs d-inline-flex align-items-center text-nowrap flex-shrink-0"
+                  style={{ height: '32px', fontSize: '12px', gap: '5px' }}
+                  onClick={() => setShowReceiveSettings(true)}
+                  title="Configure NIC Receive Port COM Settings"
+                >
+                  <i className="ti ti-settings" style={{ fontSize: '13px' }}></i>
+                  <span>Settings</span>
+                </button>
+              </div>
 
-                {cycleUuid && (
-                  <span className="badge bg-primary text-white font-mono px-2.5 py-1 fs-6 shadow-2xs">
-                    {cycleUuid} (Cycle #{cycleId})
-                  </span>
-                )}
-
-                {isDemoMode ? (
-                  <span className="badge bg-success text-white px-3 py-1.5 font-mono text-xs d-inline-flex align-items-center gap-1 shadow-2xs">
-                    <i className="ti ti-usb fs-6"></i> DEMO-PORT-01 (Emulated) Connected
-                  </span>
-                ) : usbConnected ? (
-                  <span className="badge bg-success text-white px-3 py-1.5 font-mono text-xs d-inline-flex align-items-center gap-1 shadow-2xs">
-                    <i className="ti ti-usb fs-6"></i> {
-                      formatPortName(
-                        detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName ||
-                        detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName ||
-                        usbDeviceName || selectedPort || 'COM3'
-                      )
-                    } Connected
-                  </span>
-                ) : (
-                  <span className="badge bg-danger text-white px-3 py-1.5 font-mono text-xs d-inline-flex align-items-center gap-1 shadow-2xs">
-                    <i className="ti ti-plug-connected-x fs-6"></i> USB Removed
-                  </span>
-                )}
-
-                {isSavedToDb && (
-                  <span className="badge bg-success text-white px-3 py-1 font-mono shadow-2xs">
-                    <i className="ti ti-database-check me-1"></i>DB SAVED
-                  </span>
-                )}
+              {/* Laser Port Card */}
+              <div
+                className="p-2.5 px-3 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
+                style={{ minWidth: '310px', gap: '14px' }}
+              >
+                <div className="d-flex align-items-center" style={{ gap: '12px' }}>
+                  <div
+                    className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
+                    style={{ width: '40px', height: '40px' }}
+                  >
+                    <i className={`ti ${laserConnected ? 'ti-printer text-success' : 'ti-printer-off'} fs-4`}></i>
+                  </div>
+                  <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
+                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13.5px', lineHeight: 1.2 }}>
+                      Laser Port
+                    </div>
+                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '6px', fontSize: '11.5px' }}>
+                      <span
+                        className={`rounded-circle d-inline-block flex-shrink-0 ${laserConnected ? 'bg-success' : 'bg-danger'}`}
+                        style={{ width: '7px', height: '7px' }}
+                      ></span>
+                      <span className={`fw-medium ${laserConnected ? 'text-success' : 'text-muted'}`}>
+                        {laserConnected
+                          ? `${detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.friendlyName || detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.shortName || laserDeviceName || selectedLaserPort || 'Connected'} (${laserSerialConfig.baudRate} Baud)`
+                          : 'Disconnected'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary px-2.5 py-1 fw-semibold shadow-xs d-inline-flex align-items-center text-nowrap flex-shrink-0"
+                  style={{ height: '32px', fontSize: '12px', gap: '5px' }}
+                  onClick={() => setShowLaserSettings(true)}
+                  title="Configure Laser Port COM Settings"
+                >
+                  <i className="ti ti-settings" style={{ fontSize: '13px' }}></i>
+                  <span>Settings</span>
+                </button>
               </div>
             </div>
 
             <div className="d-flex align-items-center gap-2 flex-wrap">
-              {/* USB COM Port Select Dropdown */}
-              <div className="d-flex align-items-center gap-1 bg-light p-1 rounded-2 border">
-                <i className="ti ti-plug text-primary ms-1"></i>
-                <select
-                  className="form-select form-select-sm font-mono border-0 bg-transparent py-1 pe-4 text-dark fw-bold"
-                  style={{ minWidth: '160px', cursor: 'pointer' }}
-                  value={selectedPort}
-                  onChange={(e) => handlePortSelectChange(e.target.value)}
-                  disabled={testState === 'STARTING' || testState === 'SAVING'}
-                  title="Detected Optical Ports"
-                >
-                  {availablePorts.length === 0 ? (
-                    <option value="">No Optical Ports</option>
-                  ) : (
-                    detailedPorts.map((dp, idx) => (
-                      <option key={idx} value={dp.path}>
-                        {formatPortName(dp.friendlyName || dp.shortName || dp.label || dp.path)}
-                      </option>
-                    ))
-                  )}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-xs btn-outline-secondary py-1 px-2 border-0"
-                  onClick={fetchAvailableUsbPorts}
-                  title="Scan system USB COM Ports"
-                  disabled={testState === 'STARTING' || testState === 'SAVING'}
-                >
-                  <i className="ti ti-refresh"></i>
-                </button>
-              </div>
-
               {/* Start Jig Test Button */}
               <button
                 className={`btn px-4 py-2 fw-bold shadow-sm ${isStartDisabled ? 'btn-secondary opacity-75' : 'btn-primary'
@@ -1619,6 +2045,178 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           </div>
         </div>
       </div>
+
+      {/* Modal Popup: NIC Receive Port Settings */}
+      <Modal
+        isOpen={showReceiveSettings}
+        onClose={() => setShowReceiveSettings(false)}
+        maxWidth="500px"
+        title={
+          <div className="d-flex align-items-center gap-2">
+            <i className="ti ti-adjustments text-danger fs-5"></i>
+            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
+              NIC Receive Port - COM Port Settings
+            </span>
+          </div>
+        }
+      >
+        <ComPortSettingsPanel
+          config={jigSerialConfig}
+          onChange={updateJigConfig}
+          commChannelContent={
+            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
+              <div className="input-group input-group-sm flex-grow-1">
+                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
+                  <i className="ti ti-plug" style={{ fontSize: '13px' }}></i>
+                </span>
+                <select
+                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
+                  style={{ height: '36px', fontSize: '12px' }}
+                  value={selectedPort}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__pair_new__') {
+                      handlePairDeviceManagerPort();
+                      return;
+                    }
+                    setSelectedPort(val);
+                  }}
+                  disabled={isConnectingPort || usbConnected}
+                >
+                  <option value="" disabled>Select / Connect USB Port...</option>
+                  {detailedPorts.length > 0 ? (
+                    detailedPorts.map((dp, idx) => {
+                      const isTaken = Boolean(laserConnected && selectedLaserPort && dp.path === selectedLaserPort);
+                      return (
+                        <option key={dp.path || idx} value={dp.path} disabled={isTaken}>
+                          {dp.friendlyName || dp.shortName || dp.label || dp.path}{isTaken ? ' (In use by Laser Port)' : ''}
+                        </option>
+                      );
+                    })
+                  ) : (
+                    <option value="" disabled>No COM Port Detected</option>
+                  )}
+                  <option value="__pair_new__">
+                    Select / Pair COM Port from Device Manager...
+                  </option>
+                </select>
+              </div>
+
+              {!usbConnected ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
+                  onClick={() => handleConnectJigPort(selectedPort)}
+                  disabled={isConnectingPort || !selectedPort}
+                  title="Connect NIC Receive Port"
+                >
+                  <i className="ti ti-plug"></i>
+                  <span>{isConnectingPort ? 'Connecting...' : 'Connect Port'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
+                  onClick={handleDisconnectJigPort}
+                  disabled={isConnectingPort}
+                  title="Disconnect NIC Receive Port"
+                >
+                  <i className="ti ti-plug-off"></i>
+                  <span>Disconnect</span>
+                </button>
+              )}
+            </div>
+          }
+        />
+      </Modal>
+
+      {/* Modal Popup: Laser Port Settings */}
+      <Modal
+        isOpen={showLaserSettings}
+        onClose={() => setShowLaserSettings(false)}
+        maxWidth="500px"
+        title={
+          <div className="d-flex align-items-center gap-2">
+            <i className="ti ti-adjustments text-danger fs-5"></i>
+            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
+              Laser Port - COM Port Settings
+            </span>
+          </div>
+        }
+      >
+        <ComPortSettingsPanel
+          config={laserSerialConfig}
+          onChange={updateLaserConfig}
+          commChannelContent={
+            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
+              <div className="input-group input-group-sm flex-grow-1">
+                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
+                  <i className="ti ti-cpu" style={{ fontSize: '13px' }}></i>
+                </span>
+                <select
+                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
+                  style={{ height: '36px', fontSize: '12px' }}
+                  value={selectedLaserPort}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__pair_new__') {
+                      handlePairLaserDeviceManagerPort();
+                      return;
+                    }
+                    setSelectedLaserPort(val);
+                  }}
+                  disabled={isConnectingLaserPort || laserConnected}
+                >
+                  <option value="" disabled>Select / Connect Laser Port...</option>
+                  {detailedPorts.length > 0 ? (
+                    detailedPorts.map((dp, idx) => {
+                      const isTaken = Boolean(usbConnected && selectedPort && dp.path === selectedPort);
+                      return (
+                        <option key={dp.path || idx} value={dp.path} disabled={isTaken}>
+                          {dp.friendlyName || dp.shortName || dp.label || dp.path}{isTaken ? ' (In use by NIC Receive Port)' : ''}
+                        </option>
+                      );
+                    })
+                  ) : (
+                    <option value="" disabled>No COM Port Detected</option>
+                  )}
+                  <option value="__pair_new__">
+                    Select / Pair COM Port from Device Manager...
+                  </option>
+                </select>
+              </div>
+
+              {!laserConnected ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
+                  onClick={() => handleConnectLaserPort(selectedLaserPort)}
+                  disabled={isConnectingLaserPort || !selectedLaserPort}
+                  title="Connect Laser Port"
+                >
+                  <i className="ti ti-plug"></i>
+                  <span>{isConnectingLaserPort ? 'Connecting...' : 'Connect Port'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
+                  onClick={handleDisconnectLaserPort}
+                  disabled={isConnectingLaserPort}
+                  title="Disconnect Laser Port"
+                >
+                  <i className="ti ti-plug-off"></i>
+                  <span>Disconnect</span>
+                </button>
+              )}
+            </div>
+          }
+        />
+      </Modal>
 
       {/* Active Work Order / Work ID Card assigned by Admin/Supervisor */}
       {/* 8-Channel Telemetry Grid */}

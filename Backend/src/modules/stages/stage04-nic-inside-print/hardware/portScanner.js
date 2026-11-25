@@ -45,7 +45,7 @@ const PortScanner = {
             const comIndex = detectedPorts.length + 3;
             const shortName = rawPath.toUpperCase().startsWith('COM') ? rawPath : `COM${comIndex}`;
             const manufacturer = p.manufacturer;
-            const friendlyName = shortName;
+            const friendlyName = p.friendlyName || (manufacturer ? `${manufacturer} (${shortName})` : (rawPath.toUpperCase().startsWith('COM') ? `USB Serial Port (${shortName})` : shortName));
             detectedPorts.push({
               path: resolvedPath,
               shortName,

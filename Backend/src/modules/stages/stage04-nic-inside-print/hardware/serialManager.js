@@ -12,6 +12,12 @@ let activePortInstance = null;
 let activePortPath = null;
 let isConnected = false;
 let connectionDetails = null;
+let currentConfig = {
+  baudRate: 9600,
+  dataBits: 8,
+  parity: 'none',
+  stopBits: 1
+};
 
 const pad = (n, len = 2) => String(n).padStart(len, '0');
 const getTimestamp = () => {
@@ -35,23 +41,26 @@ class SerialManager {
    * Get current connection status
    */
   static getStatus() {
+    const open = Boolean(isConnected && activePortInstance && activePortInstance.isOpen);
     return {
-      connected: isConnected,
+      connected: open,
       port: activePortPath,
+      device: connectionDetails?.friendlyName || connectionDetails?.shortName || activePortPath,
       details: connectionDetails,
-      config: {
-        baudRate: 9600,
-        dataBits: 8,
-        parity: 'none',
-        stopBits: 1
-      }
+      config: currentConfig
     };
   }
 
   /**
    * Connect to a specific physical Optical Port
    */
-  static async connect(requestedPortPath) {
+  static async connect(requestedPortPath, options = {}) {
+    const baudRate = Number(options?.baudRate) || 9600;
+    const dataBits = Number(options?.dataBits) || 8;
+    const parity = (options?.parity || 'none').toLowerCase();
+    const stopBits = Number(options?.stopBits) || 1;
+    currentConfig = { baudRate, dataBits, parity, stopBits };
+
     const availablePorts = await PortScanner.scanPorts();
     if (availablePorts.length === 0) {
       const errObj = {
@@ -76,15 +85,16 @@ class SerialManager {
 
     const portToUse = matchedInfo ? matchedInfo.path : availablePorts[0].path;
 
-    // If already connected to requested port, return current connection
+    // If already connected to requested port, return current connection without closing/reopening
     if (isConnected && activePortInstance && activePortPath === portToUse && activePortInstance.isOpen) {
       return {
         connected: true,
-        device: matchedInfo.shortName || portToUse,
+        device: matchedInfo?.friendlyName || matchedInfo?.shortName || portToUse,
         portPath: portToUse,
         availablePorts,
         details: matchedInfo,
-        message: `Already connected to Optical Port ${matchedInfo.shortName || portToUse} (9600 Baud)`
+        config: currentConfig,
+        message: `Already connected to Optical Port ${matchedInfo?.friendlyName || portToUse} (${baudRate} Baud)`
       };
     }
 
@@ -105,10 +115,10 @@ class SerialManager {
       try {
         const port = new SerialPort({
           path: portToUse,
-          baudRate: 9600,
-          dataBits: 8,
-          parity: 'none',
-          stopBits: 1,
+          baudRate,
+          dataBits,
+          parity,
+          stopBits,
           autoOpen: false
         });
 
@@ -134,6 +144,7 @@ class SerialManager {
           isConnected = false;
           activePortInstance = null;
           activePortPath = null;
+          connectionDetails = null;
           broadcastWs('jig.usb.disconnected', {
             port: portToUse,
             reason: 'Physical USB hardware cable unplugged'
@@ -151,15 +162,16 @@ class SerialManager {
         broadcastWs('jig.usb.connected', {
           port: portToUse,
           details: matchedInfo,
-          baudRate: 9600
+          baudRate
         });
 
         return {
           connected: true,
-          device: portToUse,
+          device: matchedInfo?.friendlyName || portToUse,
           availablePorts,
           details: matchedInfo,
-          message: `Connected to USB COM port ${portToUse} (9600 Baud)`
+          config: currentConfig,
+          message: `Connected to USB COM port ${matchedInfo?.friendlyName || portToUse} (${baudRate} Baud)`
         };
       } catch (err) {
         console.warn(`[SerialManager] SerialPort node open error for ${portToUse}:`, err.message);

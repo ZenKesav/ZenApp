@@ -28,9 +28,10 @@ const Stage04Controller = {
 
   async jigConnect(req, res, next) {
     try {
-      const { path, port } = req.body || {};
+      const { path, port, baudRate, dataBits, parity, stopBits } = req.body || {};
       const targetPort = path || port;
-      const result = await Stage04Service.connectPort(targetPort);
+      const options = { baudRate, dataBits, parity, stopBits };
+      const result = await Stage04Service.connectPort(targetPort, options);
       return res.status(200).json({ success: true, data: result });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
@@ -95,11 +96,12 @@ const Stage04Controller = {
    */
   async connect(req, res) {
     const requestId = req.id || req.headers['x-request-id'] || `REQ-${Date.now()}`;
-    const { path, port } = req.body || {};
+    const { path, port, baudRate, dataBits, parity, stopBits } = req.body || {};
     const targetPort = path || port;
+    const options = { baudRate, dataBits, parity, stopBits };
 
     try {
-      const conn = await Stage04Service.connectPort(targetPort);
+      const conn = await Stage04Service.connectPort(targetPort, options);
       if (!conn.connected) {
         return res.status(400).json({
           success: false,

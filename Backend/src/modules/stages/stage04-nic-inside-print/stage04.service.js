@@ -23,8 +23,8 @@ const Stage04Service = {
   /**
    * Connect to selected Optical Port
    */
-  async connectPort(portPath) {
-    return await SerialManager.connect(portPath);
+  async connectPort(portPath, options = {}) {
+    return await SerialManager.connect(portPath, options);
   },
 
 
