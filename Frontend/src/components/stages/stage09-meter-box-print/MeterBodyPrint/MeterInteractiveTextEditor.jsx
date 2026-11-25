@@ -750,9 +750,6 @@ export default function MeterInteractiveTextEditor({
           <div className="d-flex align-items-center flex-wrap gap-2">
             {!actualPrintOnly && (
               <div className="d-flex align-items-center flex-wrap gap-1 bg-white p-1 rounded-2 border shadow-2xs">
-                <span className="text-secondary fw-bold text-uppercase px-1" style={{ fontSize: '10px', letterSpacing: '0.6px' }}>
-                  3D Mode:
-                </span>
                 <button
                   type="button"
                   className={`btn btn-xs fw-semibold px-2 py-1 d-inline-flex align-items-center gap-1.5 rounded-2 transition-all ${

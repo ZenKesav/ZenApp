@@ -9,6 +9,62 @@ import { getUserAssignedStages } from '../../utils/stageUtils';
 import MeterBodyPrintConsole from './stage09-meter-box-print/MeterBodyPrintConsole';
 import MeterInteractiveTextEditor from '../../components/stages/stage09-meter-box-print/MeterBodyPrint/MeterInteractiveTextEditor';
 
+const STAGE_08_FIELDS = [
+  { key: 'hologramSeal1', label: 'Hologram Seal 1' },
+  { key: 'hologramSeal2', label: 'Hologram Seal 2' },
+  { key: 'hologramSeal3', label: 'Hologram Seal 3' },
+  { key: 'hologramSeal4', label: 'Hologram Seal 4' },
+  { key: 'hologramSeal5', label: 'Hologram Seal 5' },
+  { key: 'hologramSeal6', label: 'Hologram Seal 6' },
+  { key: 'hologramSeal7', label: 'Hologram Seal 7' },
+  { key: 'hologramSeal8', label: 'Hologram Seal 8' },
+  { key: 'meterLeftSeal1', label: 'Meter Left Seal 1' },
+  { key: 'meterLeftSeal2', label: 'Meter Left Seal 2' },
+  { key: 'meterRightSeal1', label: 'Meter Right Seal 1' },
+  { key: 'meterRightSeal2', label: 'Meter Right Seal 2' },
+  { key: 'modemSeal', label: 'Modem Seal' },
+  { key: 'looseSeal1', label: 'Loose Seal 1' },
+  { key: 'looseSeal2', label: 'Loose Seal 2' },
+  { key: 'looseSeal3', label: 'Loose Seal 3' },
+  { key: 'nicSerialNumber', label: 'NIC SN' }
+];
+
+const createDefaultStage08FieldStatuses = () =>
+  STAGE_08_FIELDS.reduce((statuses, { key }) => {
+    statuses[key] = true;
+    return statuses;
+  }, {});
+
+function Stage08FieldToggles({ statuses, onChange }) {
+  return (
+    <div className="mb-3">
+      <h6 className="form-label fw-semibold text-dark">PVC Seal Fields</h6>
+      <div className="row g-2">
+        {STAGE_08_FIELDS.map(({ key, label }) => (
+          <div className="col-md-6" key={key}>
+            <div className="d-flex align-items-center justify-content-between gap-3 border rounded-2 px-3 py-2">
+              <span className="small fw-medium text-dark">{label}</span>
+              <div className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+                <span className={`small ${statuses[key] ? 'text-success' : 'text-muted'}`}>
+                  {statuses[key] ? 'Active' : 'Inactive'}
+                </span>
+                <input
+                  type="checkbox"
+                  className="form-check-input m-0"
+                  role="switch"
+                  aria-label={`${label} active`}
+                  checked={Boolean(statuses[key])}
+                  onChange={(event) => onChange(key, event.target.checked)}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function StageView() {
   const { stageId } = useParams();
   const navigate = useNavigate();
@@ -44,6 +100,7 @@ export default function StageView() {
   const [newMonthYear, setNewMonthYear] = useState('');
   const [newTargetQty, setNewTargetQty] = useState(500);
   const [newDescription, setNewDescription] = useState('');
+  const [newStage08FieldStatuses, setNewStage08FieldStatuses] = useState(createDefaultStage08FieldStatuses);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   // New Work Order Interactive Elements
@@ -61,6 +118,7 @@ export default function StageView() {
   const [editMonthYear, setEditMonthYear] = useState('');
   const [editTargetQty, setEditTargetQty] = useState(100);
   const [editFormDescription, setEditFormDescription] = useState('');
+  const [editStage08FieldStatuses, setEditStage08FieldStatuses] = useState(createDefaultStage08FieldStatuses);
   const [editVariableTexts, setEditVariableTexts] = useState([]);
   const [editLogos, setEditLogos] = useState([]);
   const [editQrCodes, setEditQrCodes] = useState([]);
@@ -181,6 +239,8 @@ export default function StageView() {
   };
 
   const isStage4 = Boolean(stage && Number(stage.stage_number) === 4);
+  const isStage8 = Boolean(stage && Number(stage.stage_number) === 8);
+  const isStage9 = Boolean(stage && Number(stage.stage_number) === 9);
   const isBodyPrintStage =
     stage &&
     ((stage.stage_name && (stage.stage_name.toLowerCase().includes('body print') || stage.stage_name.toLowerCase().includes('inside print'))) ||
@@ -217,6 +277,7 @@ export default function StageView() {
     setNewMonthYear('');
     setNewTargetQty(500);
     setNewDescription(stage.description || 'Front full print');
+    setNewStage08FieldStatuses(createDefaultStage08FieldStatuses());
     setNewVariableTexts([
       {
         id: 'vt-1',
@@ -326,11 +387,14 @@ export default function StageView() {
             propertyOf: `' ${newVariableTexts[0]?.text || 'Sample Meter'} '`,
             loaNo: 'LOA-2026/089',
             pulseConstant: '3200 imp/kWh',
-            mfgDate: isStage4 ? '' : (newMonthYear.trim() || ''),
+            mfgDate: isStage4 || isStage8 ? '' : (newMonthYear.trim() || ''),
             manufacturer: 'Zenmeter Solutions Pvt Ltd., Bangalore, India',
             bisText: 'For details of BIS certification please visit www.bis.gov.in'
           }
         : null;
+      const finalPrintConfigPayload = isStage8
+        ? { ...(printConfigPayload || {}), stage08FieldStatuses: newStage08FieldStatuses }
+        : printConfigPayload;
 
       const res = await stageManagementService.createForm({
         form_id: trimmedFormId,
@@ -338,10 +402,10 @@ export default function StageView() {
         stage_name: stage.stage_name,
         form_title: newFormTitle.trim(),
         batch_no: newBatchNo.trim(),
-        month_year: isStage4 ? '' : (newMonthYear.trim() || ''),
+        month_year: isStage4 || isStage8 ? '' : (newMonthYear.trim() || ''),
         target_quantity: Number(newTargetQty) || 100,
         description: newDescription.trim(),
-        print_config: printConfigPayload,
+        print_config: finalPrintConfigPayload,
         assigned_operator_id: null,
         assigned_operator_name: null,
         status: 'ACTIVE',
@@ -371,6 +435,10 @@ export default function StageView() {
     setEditMonthYear(form.month_year || form.print_config?.mfgDate || '');
     setEditTargetQty(form.target_quantity || 100);
     setEditFormDescription(form.description || '');
+    setEditStage08FieldStatuses({
+      ...createDefaultStage08FieldStatuses(),
+      ...(form.print_config?.stage08FieldStatuses || {})
+    });
 
     const existingVTs = form.print_config?.variableTexts;
     if (Array.isArray(existingVTs) && existingVTs.length > 0) {
@@ -477,18 +545,21 @@ export default function StageView() {
             qrValue: editQrCodes[0]?.value || '',
             qrPos: editQrCodes[0] ? { leftPercent: editQrCodes[0].leftPercent, topPercent: editQrCodes[0].topPercent } : null,
             customLogoText: editVariableTexts[0]?.text || '',
-            mfgDate: isStage4 ? '' : (editMonthYear.trim() || '')
+            mfgDate: isStage4 || isStage8 ? '' : (editMonthYear.trim() || '')
           }
         : editingForm.print_config;
+      const finalPrintConfig = isStage8
+        ? { ...(updatedPrintConfig || {}), mfgDate: '', stage08FieldStatuses: editStage08FieldStatuses }
+        : updatedPrintConfig;
 
       const targetId = editingForm.id || editingForm.form_id;
       const res = await stageManagementService.updateForm(targetId, {
         form_title: editFormTitle.trim(),
         batch_no: editBatchNo.trim(),
-        month_year: isStage4 ? '' : (editMonthYear.trim() || ''),
+        month_year: isStage4 || isStage8 ? '' : (editMonthYear.trim() || ''),
         target_quantity: Number(editTargetQty) || 100,
         description: editFormDescription.trim(),
-        print_config: updatedPrintConfig,
+        print_config: finalPrintConfig,
         updated_by: currentUserName
       });
 
@@ -792,7 +863,7 @@ export default function StageView() {
                       </td>
                       <td>
                         <div className="small fw-semibold text-dark font-mono">{form.batch_no || 'BATCH-2026-01'}</div>
-                        {form.month_year && (
+                        {!isStage8 && form.month_year && (
                           <div className="text-secondary font-mono" style={{ fontSize: '11px' }}>
                             <i className="ti ti-calendar me-1 text-primary"></i>{form.month_year}
                           </div>
@@ -892,15 +963,6 @@ export default function StageView() {
                             title="View Work Order"
                           >
                             <i className="ti ti-eye"></i>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 px-2 py-1 font-sans ms-1"
-                            onClick={() => handleOpenEditForm(form)}
-                            title="Edit Work Order"
-                          >
-                            <i className="ti ti-edit"></i>
                           </button>
 
                           <button
@@ -1054,7 +1116,7 @@ export default function StageView() {
                           </div>
                         </div>
 
-                        {!isStage4 && (
+                        {!isStage4 && !isStage8 && (
                           <div className="row g-2 mb-2">
                             <div className="col-md-5">
                               <label className="form-label fw-semibold text-dark small mb-1 text-nowrap">Month and Year</label>
@@ -1094,31 +1156,33 @@ export default function StageView() {
                     }
                   />
                 ) : (
-                  <div>
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-dark small">Work ID / Form ID *</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm font-mono fw-bold text-primary"
-                        value={newFormId}
-                        onChange={(e) => setNewFormId(e.target.value)}
-                        placeholder="e.g. WORK-STG1-001"
-                        required
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-dark small">Form Title *</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        value={newFormTitle}
-                        onChange={(e) => setNewFormTitle(e.target.value)}
-                        placeholder="e.g. Batch Work Order"
-                        required
-                      />
+                  <div className={isStage8 ? 'mx-auto' : ''} style={isStage8 ? { maxWidth: '760px' } : undefined}>
+                    <div className={isStage8 ? 'row g-2 mb-3' : ''}>
+                      <div className={isStage8 ? 'col-12 col-md-6' : 'mb-3'}>
+                        <label className="form-label fw-semibold text-dark small">Work ID / Form ID *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm font-mono fw-bold text-primary"
+                          value={newFormId}
+                          onChange={(e) => setNewFormId(e.target.value)}
+                          placeholder="e.g. WORK-STG1-001"
+                          required
+                        />
+                      </div>
+                      <div className={isStage8 ? 'col-12 col-md-6' : 'mb-3'}>
+                        <label className="form-label fw-semibold text-dark small">Form Title *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={newFormTitle}
+                          onChange={(e) => setNewFormTitle(e.target.value)}
+                          placeholder="e.g. Batch Work Order"
+                          required
+                        />
+                      </div>
                     </div>
                     <div className="row g-2 mb-3">
-                      <div className="col-6">
+                      <div className={isStage8 ? 'col-12 col-sm-6' : 'col-6'}>
                         <label className="form-label fw-semibold text-dark small text-nowrap">Batch No *</label>
                         <input
                           type="text"
@@ -1128,7 +1192,7 @@ export default function StageView() {
                           required
                         />
                       </div>
-                      <div className="col-6">
+                      <div className={isStage8 ? 'col-12 col-sm-6' : 'col-6'}>
                         <label className="form-label fw-semibold text-dark small text-nowrap">Target Quantity *</label>
                         <input
                           type="number"
@@ -1140,7 +1204,15 @@ export default function StageView() {
                         />
                       </div>
                     </div>
-                    {!isStage4 && (
+                    {isStage8 && (
+                      <Stage08FieldToggles
+                        statuses={newStage08FieldStatuses}
+                        onChange={(key, active) =>
+                          setNewStage08FieldStatuses((current) => ({ ...current, [key]: active }))
+                        }
+                      />
+                    )}
+                    {!isStage4 && !isStage8 && (
                       <div className="row g-2 mb-3">
                         <div className="col-6">
                           <label className="form-label fw-semibold text-dark small text-nowrap">Month and Year</label>
@@ -1154,14 +1226,17 @@ export default function StageView() {
                         </div>
                       </div>
                     )}
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-dark small">Description</label>
-                      <textarea
-                        className="form-control form-control-sm"
-                        rows="2"
-                        value={newDescription}
-                        onChange={(e) => setNewDescription(e.target.value)}
-                      />
+                    <div className={isStage8 ? 'row g-2 mb-3' : ''}>
+                      <div className={isStage8 ? 'col-12 col-md-6' : 'mb-3'}>
+                        <label className="form-label fw-semibold text-dark small">Description</label>
+                        <textarea
+                          className="form-control form-control-sm"
+                          rows={isStage8 ? 3 : 2}
+                          value={newDescription}
+                          onChange={(e) => setNewDescription(e.target.value)}
+                          placeholder={isStage8 ? 'Enter work order description...' : undefined}
+                        />
+                      </div>
                     </div>
                     <div className="d-flex justify-content-end gap-2 pt-2 border-top">
                       <button
@@ -1255,7 +1330,7 @@ export default function StageView() {
                           </div>
                         </div>
 
-                        {!isStage4 && (
+                        {!isStage4 && !isStage8 && (
                           <div className="row g-2 mb-2">
                             <div className="col-md-5">
                               <label className="form-label fw-semibold text-dark small mb-1 text-nowrap">Month and Year</label>
@@ -1295,32 +1370,34 @@ export default function StageView() {
                     }
                   />
                 ) : (
-                  <div>
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-dark small">
-                        Work ID (Read-only) <span className="text-danger">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm font-mono fw-bold bg-light text-muted"
-                        value={editFormId}
-                        disabled
-                        readOnly
-                      />
-                      <small className="text-muted text-xs">Work ID cannot be changed</small>
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-dark small">Form Title *</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        value={editFormTitle}
-                        onChange={(e) => setEditFormTitle(e.target.value)}
-                        required
-                      />
+                  <div className={isStage8 ? 'mx-auto' : ''} style={isStage8 ? { maxWidth: '760px' } : undefined}>
+                    <div className={isStage8 ? 'row g-2 mb-3' : ''}>
+                      <div className={isStage8 ? 'col-12 col-md-6' : 'mb-3'}>
+                        <label className="form-label fw-semibold text-dark small">
+                          Work ID (Read-only) <span className="text-danger">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm font-mono fw-bold bg-light text-muted"
+                          value={editFormId}
+                          disabled
+                          readOnly
+                        />
+                        <small className="text-muted text-xs">Work ID cannot be changed</small>
+                      </div>
+                      <div className={isStage8 ? 'col-12 col-md-6' : 'mb-3'}>
+                        <label className="form-label fw-semibold text-dark small">Form Title *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={editFormTitle}
+                          onChange={(e) => setEditFormTitle(e.target.value)}
+                          required
+                        />
+                      </div>
                     </div>
                     <div className="row g-2 mb-3">
-                      <div className="col-6">
+                      <div className={isStage8 ? 'col-12 col-sm-6' : 'col-6'}>
                         <label className="form-label fw-semibold text-dark small text-nowrap">Batch No *</label>
                         <input
                           type="text"
@@ -1330,7 +1407,7 @@ export default function StageView() {
                           required
                         />
                       </div>
-                      <div className="col-6">
+                      <div className={isStage8 ? 'col-12 col-sm-6' : 'col-6'}>
                         <label className="form-label fw-semibold text-dark small text-nowrap">Target Quantity *</label>
                         <input
                           type="number"
@@ -1342,7 +1419,15 @@ export default function StageView() {
                         />
                       </div>
                     </div>
-                    {!isStage4 && (
+                    {isStage8 && (
+                      <Stage08FieldToggles
+                        statuses={editStage08FieldStatuses}
+                        onChange={(key, active) =>
+                          setEditStage08FieldStatuses((current) => ({ ...current, [key]: active }))
+                        }
+                      />
+                    )}
+                    {!isStage4 && !isStage8 && (
                       <div className="row g-2 mb-3">
                         <div className="col-6">
                           <label className="form-label fw-semibold text-dark small text-nowrap">Month and Year</label>
@@ -1356,14 +1441,17 @@ export default function StageView() {
                         </div>
                       </div>
                     )}
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-dark small">Description</label>
-                      <textarea
-                        className="form-control form-control-sm"
-                        rows="2"
-                        value={editFormDescription}
-                        onChange={(e) => setEditFormDescription(e.target.value)}
-                      />
+                    <div className={isStage8 ? 'row g-2 mb-3' : ''}>
+                      <div className={isStage8 ? 'col-12 col-md-6' : 'mb-3'}>
+                        <label className="form-label fw-semibold text-dark small">Description</label>
+                        <textarea
+                          className="form-control form-control-sm"
+                          rows={isStage8 ? 3 : 2}
+                          value={editFormDescription}
+                          onChange={(e) => setEditFormDescription(e.target.value)}
+                          placeholder={isStage8 ? 'Enter work order description...' : undefined}
+                        />
+                      </div>
                     </div>
                     <div className="d-flex justify-content-end gap-2 pt-2 border-top">
                       <button
@@ -1389,96 +1477,115 @@ export default function StageView() {
             {/* 3. VIEW MODE */}
             {workOrderMode === 'view' && viewingForm && (
               <div>
-                <div className="row g-3 mb-3">
-                  <div className="col-md-3">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <span className="text-muted small fw-semibold d-block mb-1">Work ID:</span>
-                      <span className="badge bg-white text-primary border font-mono fs-6 px-2.5 py-1.5 shadow-2xs">
+                <div className="row g-3 mb-3 pb-3 border-bottom">
+                  <div className="col-12 col-lg-4">
+                    <div className="px-2 py-2 h-100">
+                      <span className="text-muted small d-block mb-1">Work ID:</span>
+                      <span className="text-primary fw-semibold fs-6 d-inline-flex align-items-center gap-1">
                         <i className="ti ti-id-badge me-1"></i>{viewingForm.form_id}
                       </span>
                     </div>
                   </div>
-                  <div className="col-md-3">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <span className="text-muted small fw-semibold d-block mb-1">Form Title:</span>
-                      <span className="fw-bold text-dark d-block">{viewingForm.form_title}</span>
+                  <div className="col-12 col-lg-4">
+                    <div className="px-2 py-2 h-100">
+                      <span className="text-muted small d-block mb-1">Form Title:</span>
+                      <span className="text-dark fs-6 fw-semibold d-block">{viewingForm.form_title}</span>
                       {viewingForm.description && (
                         <small className="text-secondary d-block mt-0.5">{viewingForm.description}</small>
                       )}
                     </div>
                   </div>
-                  <div className="col-md-3">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <span className="text-muted small fw-semibold d-block mb-1">Batch & Target:</span>
-                      <span className="font-mono text-dark fw-bold">{viewingForm.batch_no || '-'}</span>
-                      <span className="badge bg-secondary ms-1.5">{viewingForm.target_quantity || 0} Meters</span>
-                      {viewingForm.month_year && (
-                        <div className="text-muted font-mono mt-1" style={{ fontSize: '11.5px' }}>
+                  <div className="col-12 col-lg-4">
+                    <div className="px-2 py-2 h-100">
+                      <span className="text-muted small d-block mb-1">Batch & Target:</span>
+                      <span className="text-dark fs-6 fw-semibold">{viewingForm.batch_no || '-'}</span>
+                      <span className="text-secondary fs-6 ms-2">{viewingForm.target_quantity || 0} Meters</span>
+                      {!isStage8 && viewingForm.month_year && (
+                        <div className="text-muted mt-1" style={{ fontSize: '11.5px' }}>
                           <i className="ti ti-calendar me-1 text-primary"></i>Mfg Date: {viewingForm.month_year}
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className="col-md-3">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <span className="text-muted small fw-semibold d-block mb-1">Assign Status:</span>
+                </div>
+
+                <div className="row g-3 mb-3 pb-3 border-bottom">
+                  <div className="col-12 col-lg-4">
+                    <div className="px-2 py-2 h-100">
+                      <span className="text-muted small d-block mb-1">Assign Status:</span>
                       {viewingForm.assigned_operator_id ? (
                         <div>
-                          <span className="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 font-sans">
+                          <span className="badge fs-6 bg-success-subtle text-success border border-success-subtle px-2 py-1 font-sans">
                             <i className="ti ti-check me-1"></i>Assigned (Stage #{stage.stage_number})
                           </span>
-                          <div className="text-muted text-xs mt-1">
+                          <div className="text-muted small mt-1">
                             Assigned by: {viewingForm.reassigned_by || viewingForm.assigned_by || 'Admin'}
                           </div>
                         </div>
                       ) : (
-                        <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 font-sans">
+                        <span className="badge fs-6 bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 font-sans">
                           <i className="ti ti-clock me-1"></i>Unassigned
                         </span>
                       )}
                     </div>
                   </div>
-                </div>
-
-                <div className="row g-3 mb-3">
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <div className="d-flex align-items-center justify-content-between">
-                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0.5 font-sans fw-semibold">
-                          <i className="ti ti-user-plus me-1"></i>CREATED BY
-                        </span>
-                        <span className="font-mono text-secondary small">
-                          <i className="ti ti-calendar me-1"></i>{formatDateTimeDDMMYYYY(viewingForm.created_at)}
-                        </span>
-                      </div>
-                      <div className="fw-bold text-dark mt-2 fs-6">
+                  <div className="col-12 col-lg-4">
+                    <div className="px-2 py-2 h-100">
+                      <span className="text-muted small d-block mb-1">
+                        <i className="ti ti-user-plus me-1"></i>Created By
+                      </span>
+                      <div className="text-dark fs-6 fw-medium">
                         {viewingForm.created_by || 'AdminIT (EMP001)'}
                       </div>
+                      <span className="text-secondary text-xs d-block mt-1">
+                        <i className="ti ti-calendar me-1"></i>{formatDateTimeDDMMYYYY(viewingForm.created_at)}
+                      </span>
                     </div>
                   </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <div className="d-flex align-items-center justify-content-between">
-                        <span className="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5 font-sans fw-semibold">
-                          <i className="ti ti-refresh me-1"></i>LAST UPDATED BY
-                        </span>
-                        <span className="font-mono text-secondary small">
-                          <i className="ti ti-clock me-1"></i>{formatDateTimeDDMMYYYY(viewingForm.updated_at)}
-                        </span>
-                      </div>
-                      <div className="fw-bold text-dark mt-2 fs-6">
+                  <div className="col-12 col-lg-4">
+                    <div className="px-2 py-2 h-100">
+                      <span className="text-muted small d-block mb-1">
+                        <i className="ti ti-refresh me-1"></i>Last Updated By
+                      </span>
+                      <div className="text-dark fs-6 fw-medium">
                         {viewingForm.updated_by || viewingForm.created_by || 'AdminIT (EMP001)'}
                       </div>
+                      <span className="text-secondary text-xs d-block mt-1">
+                        <i className="ti ti-clock me-1"></i>{formatDateTimeDDMMYYYY(viewingForm.updated_at)}
+                      </span>
                     </div>
                   </div>
                 </div>
 
+                {isStage8 && (
+                  <div className="mb-3 pb-3 border-bottom">
+                    <h6 className="fw-bold text-dark mb-3">PVC Seal Field Status</h6>
+                    <div className="row g-2">
+                      {STAGE_08_FIELDS.map(({ key, label }) => {
+                        const isActive = viewingForm.print_config?.stage08FieldStatuses?.[key] ?? true;
+                        return (
+                          <div className="col-md-6" key={key}>
+                            <div className="d-flex align-items-center justify-content-between gap-3 border-bottom px-2 py-2">
+                              <span className="fs-6 fw-normal text-dark">{label}</span>
+                              <span
+                                className={`badge fs-6 ${
+                                  isActive
+                                    ? 'bg-success-subtle text-success border border-success-subtle'
+                                    : 'bg-secondary-subtle text-secondary border'
+                                }`}
+                              >
+                                {isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {isBodyPrintStage && viewingForm.print_config && (
-                  <div className="border rounded-3 p-3 bg-white mb-3">
-                    <h6 className="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-                      <i className="ti ti-cpu text-primary"></i>
-                      <span>Laser Marking Layout Preview</span>
-                    </h6>
+                  <div className="pb-3 mb-3">
                     <MeterInteractiveTextEditor
                       readOnly={true}
                       actualPrintOnly={isStage4}
@@ -1491,22 +1598,6 @@ export default function StageView() {
                   </div>
                 )}
 
-                <div className="d-flex justify-content-end gap-2 pt-2 border-top">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary px-3"
-                    onClick={() => handleOpenEditForm(viewingForm)}
-                  >
-                    <i className="ti ti-edit me-1"></i>Edit this Work Order
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-light px-3"
-                    onClick={() => setWorkOrderMode(null)}
-                  >
-                    Close View
-                  </button>
-                </div>
               </div>
             )}
           </div>

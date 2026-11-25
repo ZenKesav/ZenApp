@@ -3523,9 +3523,6 @@ export default function MeterBodyPrintConsole({
 
               {/* 3D Mode Buttons (CAD & Polycarbonate) + Separate Actual Print Button on RIGHT SIDE */}
               <div className="d-flex align-items-center gap-1.5 flex-wrap">
-                <span className="text-secondary fw-bold text-uppercase d-none d-xxl-inline" style={{ fontSize: '10px', letterSpacing: '0.6px' }}>
-                  3D Mode:
-                </span>
                 <div className="btn-group btn-group-sm text-nowrap" role="group">
                   <button
                     type="button"

@@ -202,10 +202,6 @@ export default function StageManagement() {
     )
   );
 
-  const handleOpenEdit = (sObj) => {
-    navigate(`/stage-management/edit/${sObj.stage_number}`);
-  };
-
   const handleUpdateStage = async (e) => {
     e.preventDefault();
     if (!editingStage) return;
@@ -813,7 +809,7 @@ export default function StageManagement() {
                   <th>Stage Name & Line Type</th>
                   <th>Process Checks & Description</th>
                   <th style={{ width: '130px' }} className="text-center">Status</th>
-                  <th className="text-end pe-4" style={{ minWidth: '135px' }}>Actions</th>
+                  <th className="text-end pe-4" style={{ minWidth: '100px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -873,13 +869,6 @@ export default function StageManagement() {
                               style={{ width: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                             >
                               <i className="ti ti-eye fs-5"></i>
-                            </button>
-                            <button
-                              onClick={() => handleOpenEdit(s)}
-                              className="btn btn-sm btn-action-edit border-0"
-                              title="Edit Stage"
-                            >
-                              <i className="ti ti-edit fs-5"></i>
                             </button>
                             <button
                               onClick={() => handleDeleteStage(s)}
