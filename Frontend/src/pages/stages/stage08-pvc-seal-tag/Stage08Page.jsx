@@ -23,6 +23,16 @@ export const STAGE_08_FIELDS = [
   { key: 'nicSerialNumber', label: 'NIC SN', shortLabel: 'NIC SN', placeholder: 'Scan or enter NIC SN barcode...', icon: 'ti-cpu' }
 ];
 
+export const METER_READER_FIELDS = [
+  { key: 'uid', label: '1. Uid', icon: 'ti-id' },
+  { key: 'status', label: '2. Status', icon: 'ti-circle-check' },
+  { key: 'meterSn', label: '3. Meter SN', icon: 'ti-barcode' },
+  { key: 'imei', label: '4. IMEI', icon: 'ti-device-mobile' },
+  { key: 'nicSn', label: '5. NIC SN', icon: 'ti-cpu' },
+  { key: 'db', label: '6. DB', icon: 'ti-database' },
+  { key: 'result', label: '7. Result', icon: 'ti-clipboard-check' }
+];
+
 export default function Stage08Page() {
   const [activeWorkForm, setActiveWorkForm] = useState(null);
   const [loadingForm, setLoadingForm] = useState(true);
@@ -31,6 +41,15 @@ export default function Stage08Page() {
   // Meter identifier & dynamic seal input values
   const [meterSerial, setMeterSerial] = useState('');
   const [fieldValues, setFieldValues] = useState({});
+  const [meterReaderData, setMeterReaderData] = useState({
+    uid: '',
+    status: '',
+    meterSn: '',
+    imei: '',
+    nicSn: '',
+    db: '',
+    result: ''
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Verified records history
@@ -38,6 +57,7 @@ export default function Stage08Page() {
   const [loadingRecords, setLoadingRecords] = useState(false);
 
   const inputRefs = useRef({});
+  const meterReaderRefs = useRef({});
 
   // 1. Load active assigned work form for Stage 8
   const loadActiveWorkForm = async () => {
@@ -103,41 +123,77 @@ export default function Stage08Page() {
     }));
   };
 
-  // Move to next field on Enter key
-  const handleKeyDown = (e, currentKey) => {
+  const handleMeterReaderChange = (key, value) => {
+    setMeterReaderData(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const handleMeterReaderKeyDown = (e, currentKey) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (currentKey === 'meterSerial') {
-        if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
-          inputRefs.current[activeFields[0].key].focus();
+      const currentIndex = METER_READER_FIELDS.findIndex(f => f.key === currentKey);
+      if (currentIndex >= 0 && currentIndex < METER_READER_FIELDS.length - 1) {
+        const nextKey = METER_READER_FIELDS[currentIndex + 1].key;
+        if (meterReaderRefs.current[nextKey]) {
+          meterReaderRefs.current[nextKey].focus();
         }
       } else {
-        const currentIndex = activeFields.findIndex(f => f.key === currentKey);
-        if (currentIndex >= 0 && currentIndex < activeFields.length - 1) {
-          const nextKey = activeFields[currentIndex + 1].key;
-          if (inputRefs.current[nextKey]) {
-            inputRefs.current[nextKey].focus();
-          }
-        } else if (isAllScanned) {
-          handleSubmit();
+        e.target?.blur();
+      }
+    }
+  };
+
+  // Move to next field on Enter or Tab key, stop scanning when the last input field is finished
+  const handleKeyDown = (e, currentKey) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const currentIndex = activeFields.findIndex(f => f.key === currentKey);
+      if (currentIndex >= 0 && currentIndex < activeFields.length - 1) {
+        const nextKey = activeFields[currentIndex + 1].key;
+        if (inputRefs.current[nextKey]) {
+          inputRefs.current[nextKey].focus();
+        }
+      } else {
+        // Last input field finished - stop scanning immediately and remove focus
+        e.preventDefault();
+        e.target?.blur();
+        if (inputRefs.current[currentKey]) {
+          inputRefs.current[currentKey].blur();
         }
       }
     }
   };
 
-  // Check if meter serial and all active fields have values
-  const isMeterSerialFilled = Boolean(meterSerial && meterSerial.trim().length >= 4);
+  // Check if all active fields have values
   const isAllScanned = Boolean(
-    isMeterSerialFilled &&
-    (activeFields.length === 0 || activeFields.every(f => fieldValues[f.key] && String(fieldValues[f.key]).trim().length > 0))
+    activeFields.length > 0 &&
+    activeFields.every(f => fieldValues[f.key] && String(fieldValues[f.key]).trim().length > 0)
   );
+
+  // Focus first input field when fields become available
+  useEffect(() => {
+    if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
+      inputRefs.current[activeFields[0].key].focus();
+    }
+  }, [activeFields.length]);
 
   // Clear all form inputs
   const handleClear = () => {
     setMeterSerial('');
     setFieldValues({});
-    if (inputRefs.current.meterSerial) {
-      inputRefs.current.meterSerial.focus();
+    setMeterReaderData({
+      uid: '',
+      status: '',
+      meterSn: '',
+      imei: '',
+      nicSn: '',
+      db: '',
+      result: ''
+    });
+    if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
+      inputRefs.current[activeFields[0].key].focus();
     }
   };
 
@@ -152,14 +208,24 @@ export default function Stage08Page() {
 
     setIsSubmitting(true);
     try {
+      const fallbackMeterNo = meterReaderData.meterSn?.trim() ||
+        fieldValues.nicSerialNumber?.trim() ||
+        meterReaderData.nicSn?.trim() ||
+        fieldValues.meterLeftSeal1?.trim() ||
+        fieldValues[activeFields[0]?.key]?.trim() ||
+        `MTR-${Date.now()}`;
+
+      const finalMeterSerial = meterSerial.trim() || fallbackMeterNo;
+
       const payload = {
-        meter_no: meterSerial.trim(),
-        meter_serial: meterSerial.trim(),
+        meter_no: finalMeterSerial,
+        meter_serial: finalMeterSerial,
         form_id: activeWorkForm.form_id || activeWorkForm.id,
         work_id: activeWorkForm.form_id,
         status: 'PASS',
         seals: {
-          meter_serial: meterSerial.trim(),
+          meter_serial: finalMeterSerial,
+          meter_reader: meterReaderData,
           ...fieldValues
         }
       };
@@ -168,7 +234,7 @@ export default function Stage08Page() {
       if (res && res.success) {
         showSuccessAlert(
           'Seal Verified & Saved',
-          `Meter ${meterSerial.trim()} paired with all ${activeFields.length} security seals successfully!`
+          `Meter ${finalMeterSerial} paired with all ${activeFields.length} security seals successfully!`
         );
 
         if (typeof res.completed_quantity === 'number') {
@@ -180,8 +246,17 @@ export default function Stage08Page() {
         // Reset inputs for next meter
         setMeterSerial('');
         setFieldValues({});
-        if (inputRefs.current.meterSerial) {
-          inputRefs.current.meterSerial.focus();
+        setMeterReaderData({
+          uid: '',
+          status: '',
+          meterSn: '',
+          imei: '',
+          nicSn: '',
+          db: '',
+          result: ''
+        });
+        if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
+          inputRefs.current[activeFields[0].key].focus();
         }
 
         fetchRecords();
@@ -287,56 +362,25 @@ export default function Stage08Page() {
               </small>
             </div>
           ) : (
-            <div className="row g-3">
+            <div className="row row-cols-2 row-cols-sm-3 row-cols-md-5 g-3">
               {activeFields.map((field) => {
                 const val = fieldValues[field.key] || '';
-                const isFilled = Boolean(val && val.trim().length > 0);
 
                 return (
-                  <div className="col-12 col-md-6" key={field.key}>
-                    <div className={`p-3 rounded-3 border h-100 ${isFilled ? 'border-success-subtle bg-success-subtle/10' : 'border-secondary-subtle bg-white'}`}>
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <span className="fw-semibold text-dark small d-flex align-items-center gap-1.5">
-                          <i className={`ti ${field.icon || 'ti-tag'} text-primary`}></i>
-                          {field.label}
-                        </span>
-                        <div>
-                          {isFilled ? (
-                            <span className="badge bg-success text-white px-2 py-0.5 font-mono text-2xs">
-                              <i className="ti ti-check me-0.5"></i> SCANNED
-                            </span>
-                          ) : (
-                            <span className="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-0.5 font-mono text-2xs">
-                              AWAITING SCAN
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="input-group input-group-sm">
-                        <span className="input-group-text bg-light border-secondary-subtle">
-                          <i className="ti ti-scan text-muted"></i>
-                        </span>
-                        <input
-                          type="text"
-                          ref={(el) => (inputRefs.current[field.key] = el)}
-                          className="form-control font-mono fw-medium"
-                          placeholder={field.placeholder}
-                          value={val}
-                          onChange={(e) => handleFieldValueChange(field.key, e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, field.key)}
-                        />
-                        {val && (
-                          <button
-                            type="button"
-                            className="btn btn-outline-secondary btn-sm"
-                            onClick={() => handleFieldValueChange(field.key, '')}
-                            title="Clear"
-                          >
-                            <i className="ti ti-x"></i>
-                          </button>
-                        )}
-                      </div>
+                  <div className="col" key={field.key}>
+                    <div className="mb-2">
+                      <span className="fw-semibold text-dark small d-flex align-items-center gap-1.5 mb-1">
+                        <i className={`ti ${field.icon || 'ti-tag'} text-primary`}></i>
+                        {field.label}
+                      </span>
+                      <input
+                        type="text"
+                        ref={(el) => (inputRefs.current[field.key] = el)}
+                        className="form-control form-control-sm py-1 font-mono fw-medium"
+                        value={val}
+                        onChange={(e) => handleFieldValueChange(field.key, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, field.key)}
+                      />
                     </div>
                   </div>
                 );
@@ -344,9 +388,41 @@ export default function Stage08Page() {
             </div>
           )}
 
+          {/* Meter Reader start */}
+          <div className="mt-4 pt-3 border-top border-secondary-subtle">
+            <div className="d-flex align-items-center gap-2 mb-2">
+              <i className="ti ti-device-analytics text-primary fs-5"></i>
+              <h6 className="mb-0 fw-bold text-dark">Meter Reader</h6>
+              <span className="badge bg-secondary-subtle text-secondary small py-0.5 px-2">Read-Only</span>
+            </div>
+            <div className="row row-cols-2 row-cols-sm-3 row-cols-md-5 g-3">
+              {METER_READER_FIELDS.map((field) => (
+                <div className="col" key={field.key}>
+                  <div className="mb-2">
+                    <span className="fw-semibold text-secondary small d-flex align-items-center gap-1.5 mb-1">
+                      <i className={`ti ${field.icon || 'ti-tag'} text-secondary`}></i>
+                      {field.label}
+                    </span>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      tabIndex={-1}
+                      ref={(el) => (meterReaderRefs.current[field.key] = el)}
+                      className="form-control form-control-sm py-1 font-mono fw-medium bg-light text-secondary border-secondary-subtle"
+                      value={meterReaderData[field.key] || ''}
+                      style={{ cursor: 'not-allowed' }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Meter Reader end */}
+
           {/* Action Button */}
           {activeFields.length > 0 && (
-            <div className="mt-4 pt-3 border-top border-secondary-subtle d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div className="mt-4 pt-3 border-secondary-subtle d-flex align-items-center justify-content-between flex-wrap gap-2">
               <span className="small text-muted font-mono">
                 {activeFields.filter(f => fieldValues[f.key] && fieldValues[f.key].trim().length > 0).length} of {activeFields.length} seals scanned
               </span>
