@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../app/store';
 import { clearSavedStageForUser, isFullAccessUser, isSupervisorUser } from '../../../utils/stageUtils';
 import { showSuccessAlert } from '../../../utils/swal';
 
 const Topbar = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isCollapsed, toggleSidebar, toggleMobileSidebar, user, currentShift, logout, selectedStageId, setSelectedStageId } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
 
@@ -53,6 +54,11 @@ const Topbar = () => {
 
     // 2. Supervisor -> "Supervisor"
     if (roleUpper === 'SUPERVISOR' || roleUpper.includes('SUPERVISOR')) {
+      const pathMatch = location.pathname.match(/\/stages\/(?:stage0*|)(\d+)/i);
+      const routeStage = pathMatch ? parseInt(pathMatch[1], 10) : null;
+      if (routeStage) {
+        return { label: `Supervisor (Stage ${routeStage})`, bgStyle: { backgroundColor: '#0284c7', color: '#ffffff' }, icon: 'ti-user-check' };
+      }
       if (selectedStageId === 'all') {
         return { label: 'Supervisor (All Stages)', bgStyle: { backgroundColor: '#0284c7', color: '#ffffff' }, icon: 'ti-layout-grid' };
       }
@@ -72,28 +78,70 @@ const Topbar = () => {
       return { label: 'Report Viewer', bgStyle: { backgroundColor: '#0891b2', color: '#ffffff' }, icon: 'ti-file-analytics' };
     }
 
-    // 5. Stage Users / Operators (e.g. Operator (4-Stage), Operator (1-Stage), etc.)
-    let stageNum = selectedStageId && selectedStageId !== 'all' ? selectedStageId : user?.stage_id;
-    if (!stageNum && user?.assigned_stage) {
-      const rawStage = String(user.assigned_stage).trim();
-      if (/^\d+$/.test(rawStage)) {
-        stageNum = rawStage;
-      } else {
-        const match = rawStage.match(/(\d+)/);
-        if (match) stageNum = match[1];
+    // 5. Stage Users / Operators (Show single active stage only, e.g. Operator (4-Stage), Operator (8-Stage), Operator (9-Stage))
+    let activeStageNum = null;
+
+    // A. Detect stage from current URL path first (e.g. /stages/4, /stages/8, /stages/9, /stages/stage08, etc.)
+    const pathMatch = location.pathname.match(/\/stages\/(?:stage0*|)(\d+)/i);
+    if (pathMatch) {
+      activeStageNum = parseInt(pathMatch[1], 10);
+    }
+
+    // B. Detect from query parameter (e.g. ?stage=4)
+    if (!activeStageNum && location.search) {
+      const queryStage = new URLSearchParams(location.search).get('stage');
+      if (queryStage && /^\d+$/.test(String(queryStage).trim())) {
+        activeStageNum = parseInt(queryStage, 10);
       }
     }
 
-    if (stageNum) {
-      return { label: `Operator (${stageNum}-Stage)`, bgStyle: { backgroundColor: '#ff5c00', color: '#ffffff' }, icon: 'ti-subtask' };
+    // C. Detect from selectedStageId in AuthContext if a single stage
+    if (!activeStageNum && selectedStageId && selectedStageId !== 'all' && !String(selectedStageId).includes(',')) {
+      const parsed = parseInt(String(selectedStageId).trim(), 10);
+      if (!isNaN(parsed)) {
+        activeStageNum = parsed;
+      }
     }
 
-    if (user?.assigned_stage) {
-      const stageStr = String(user.assigned_stage).trim();
-      if (stageStr.toLowerCase().includes('stage')) {
-        return { label: `Operator (${stageStr})`, bgStyle: { backgroundColor: '#ff5c00', color: '#ffffff' }, icon: 'ti-subtask' };
+    // D. Detect from session or local storage if a single stage
+    if (!activeStageNum) {
+      try {
+        const saved = sessionStorage.getItem('zenmeter_selected_stage_id') || localStorage.getItem('zenmeter_selected_stage_id');
+        if (saved && saved !== 'all' && !saved.includes(',')) {
+          const parsed = parseInt(saved.trim(), 10);
+          if (!isNaN(parsed)) {
+            activeStageNum = parsed;
+          }
+        }
+      } catch (e) { }
+    }
+
+    // E. Detect from user profile if assigned a single stage
+    if (!activeStageNum && user?.stage_id && !String(user.stage_id).includes(',')) {
+      const parsed = parseInt(String(user.stage_id).trim(), 10);
+      if (!isNaN(parsed)) {
+        activeStageNum = parsed;
       }
-      return { label: `Operator (${stageStr}-Stage)`, bgStyle: { backgroundColor: '#ff5c00', color: '#ffffff' }, icon: 'ti-subtask' };
+    }
+
+    if (!activeStageNum && user?.assigned_stage && !String(user.assigned_stage).includes(',')) {
+      const match = String(user.assigned_stage).match(/\d+/);
+      if (match) {
+        activeStageNum = parseInt(match[0], 10);
+      }
+    }
+
+    // F. Fallback: if user has multiple assigned stages (e.g. "4, 8, 9, 10, ...") and on non-stage page, pick first stage only
+    if (!activeStageNum && (user?.stage_id || user?.assigned_stage || user?.assigned_stages)) {
+      const raw = String(user.stage_id || user.assigned_stage || (Array.isArray(user.assigned_stages) ? user.assigned_stages.join(',') : ''));
+      const firstMatch = raw.match(/\d+/);
+      if (firstMatch) {
+        activeStageNum = parseInt(firstMatch[0], 10);
+      }
+    }
+
+    if (activeStageNum) {
+      return { label: `Operator (${activeStageNum}-Stage)`, bgStyle: { backgroundColor: '#ff5c00', color: '#ffffff' }, icon: 'ti-subtask' };
     }
 
     return { label: 'Operator', bgStyle: { backgroundColor: '#ff5c00', color: '#ffffff' }, icon: 'ti-subtask' };
