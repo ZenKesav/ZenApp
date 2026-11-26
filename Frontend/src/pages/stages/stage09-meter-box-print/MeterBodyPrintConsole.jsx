@@ -138,30 +138,32 @@ export const formatSerialSummary = (cfg) => {
   return `${eff.baudRate} ${eff.dataBits}${pChar}${eff.stopBits}`;
 };
 
-function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelContent }) {
+function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelContent, showHeader = false }) {
   return (
-    <div className="mt-2.5 p-3 bg-light rounded-2 border border-secondary-subtle">
-      <div className="d-flex align-items-center justify-content-between mb-2.5 pb-1.5 border-bottom border-secondary-subtle">
-        <span className="fw-semibold text-secondary small text-uppercase" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>
-          <i className="ti ti-adjustments me-1 text-danger"></i> {title || 'COM Port Settings'}
-        </span>
-        {onClose && (
-          <button
-            type="button"
-            className="btn btn-xs btn-link text-muted p-0 text-decoration-none"
-            onClick={onClose}
-            title="Close Settings"
-            style={{ fontSize: '14px', lineHeight: 1 }}
-          >
-            <i className="ti ti-x"></i>
-          </button>
-        )}
-      </div>
+    <div className="p-1">
+      {showHeader && (
+        <div className="d-flex align-items-center justify-content-between mb-2.5 pb-1.5 border-bottom border-secondary-subtle">
+          <span className="fw-semibold text-secondary small text-uppercase" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>
+            <i className="ti ti-adjustments me-1 text-danger"></i> {title || 'COM Port Settings'}
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              className="btn btn-xs btn-link text-muted p-0 text-decoration-none"
+              onClick={onClose}
+              title="Close Settings"
+              style={{ fontSize: '14px', lineHeight: 1 }}
+            >
+              <i className="ti ti-x"></i>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 1. Send/Receive on Comm. Channel (COM Port Selection & Connect/Disconnect Button) */}
       {commChannelContent && (
-        <div className="mb-3 pb-2.5 border-bottom border-secondary-subtle">
-          <label className="form-label fw-semibold text-dark mb-1.5 d-block" style={{ fontSize: '11.5px' }}>
+        <div className="mb-1 pb-2.5">
+          <label className="form-label fw-semibold text-dark d-block" style={{ fontSize: '11.5px' }}>
             Send/Receive on Comm. Channel
           </label>
           {commChannelContent}
@@ -169,7 +171,7 @@ function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelCon
       )}
 
       {/* 2. COM Port Settings */}
-      <div className="fw-semibold text-dark mb-2" style={{ fontSize: '11.5px' }}>
+      <div className="fw-semibold text-dark" style={{ fontSize: '11.5px' }}>
         COM Port Settings
       </div>
       <div className="row g-2">
@@ -3468,53 +3470,206 @@ export default function MeterBodyPrintConsole({
         </div>
       </div> */}
 
-      {/* Work ID Switcher Ribbon */}
+      {/* Work ID Switcher Ribbon & Port Connectivity Header Bar (Row: Col 6, Col 3, Col 3) */}
       <div className="card shadow-2xs border-0 mb-4 bg-white">
-        <div className="card-body py-2.5 px-3.5">
-          {!activeWorkForm || !activeWorkForm.assigned_operator_id ? (
-            <div className="text-secondary small fst-italic d-flex align-items-center gap-1.5 py-1">
-              <i className="ti ti-info-circle text-warning fs-5"></i>
-              <span>No Work ID currently assigned to Stage #{stageId}. Assign a Work ID in Stage Management to start production.</span>
+        <div className="card-body py-2 px-3">
+          <div className="row align-items-center g-3">
+            {/* Col 6: Active Work ID Info */}
+            <div className="col-xl-6 col-lg-6 col-12">
+              {!activeWorkForm || !activeWorkForm.assigned_operator_id ? (
+                <div className="text-secondary small fst-italic d-flex align-items-center gap-1.5 py-1">
+                  <i className="ti ti-info-circle text-warning fs-5"></i>
+                  <span>No Work ID currently assigned to Stage #{stageId}. Assign a Work ID in Stage Management to start production.</span>
+                </div>
+              ) : (
+                <div className="small font-mono text-secondary d-flex align-items-center gap-2 flex-wrap">
+                  <span className="d-inline-flex align-items-center gap-1.5">
+                    <i className="ti ti-id-badge text-primary fs-5"></i>
+                    <strong className="text-dark">ACTIVE WORK ID:</strong>{' '}
+                    <span className="text-primary fw-bold">{activeWorkForm.form_id}</span>
+                  </span>
+                  <span className="text-muted">|</span>
+                  <span>
+                    <strong>Batch:</strong> <span className="text-dark fw-bold">{activeWorkForm.batch_no}</span>
+                  </span>
+                  {activeWorkForm.month_year && (
+                    <>
+                      <span className="text-muted">|</span>
+                      <span>
+                        <strong>Date:</strong> <span className="text-dark fw-bold">{activeWorkForm.month_year}</span>
+                      </span>
+                    </>
+                  )}
+                  {!hideProductionMetrics && (
+                    <>
+                      <span className="text-muted">|</span>
+                      <span>
+                        <strong>Target:</strong> <span className="text-dark fw-bold">{targetQuantity}</span>
+                      </span>
+                      <span className="text-muted">|</span>
+                      <span>
+                        <strong>Completed:</strong> <span className="text-success fw-bold">{displayedCompletedCount}</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="small font-mono text-secondary d-flex align-items-center justify-content-between gap-3 flex-wrap">
-              <div className="d-flex align-items-center gap-3 flex-wrap">
-                <span className="d-inline-flex align-items-center gap-1.5">
-                  <i className="ti ti-id-badge text-primary fs-5"></i>
-                  <strong className="text-dark">ACTIVE WORK ID:</strong>{' '}
-                  <span className="text-primary fw-bold">{activeWorkForm.form_id}</span>
-                </span>
-                <span>&bull;</span>
-                <span>
-                  <strong>Batch:</strong> <span className="text-dark fw-bold">{activeWorkForm.batch_no}</span>
-                </span>
-                {activeWorkForm.month_year && (
-                  <>
-                    <span>&bull;</span>
-                    <span>
-                      <strong>Date:</strong> <span className="text-dark fw-bold">{activeWorkForm.month_year}</span>
-                    </span>
-                  </>
-                )}
-                {!hideProductionMetrics && (
-                  <>
-                    <span>&bull;</span>
-                    <span>
-                      <strong>Target:</strong> <span className="text-dark fw-bold">{targetQuantity}</span>
-                    </span>
-                    <span>&bull;</span>
-                    <span>
-                      <strong>Completed:</strong> <span className="text-success fw-bold">{displayedCompletedCount}</span>
-                    </span>
-                  </>
-                )}
-                <span>&bull;</span>
-                <span className={`badge px-2.5 py-1 ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary text-white'}`}>
-                  {activeWorkForm.status || 'ACTIVE'}
-                </span>
+
+            {/* Col 3: Optical Port Card (Image 1 Style) */}
+            <div className="col-xl-3 col-lg-3 col-md-6 col-12">
+              <div
+                className="p-2 px-2.5 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
+                style={{ gap: '10px' }}
+              >
+                <div className="d-flex align-items-center" style={{ gap: '10px', minWidth: 0 }}>
+                  <div
+                    className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
+                    style={{ width: '38px', height: '38px' }}
+                  >
+                    <i
+                      className={`ti ${opticalStatus.checking
+                        ? 'ti-loader spin text-warning'
+                        : opticalStatus.connected
+                          ? 'ti-plug-connected text-success'
+                          : 'ti-usb'
+                        } fs-4`}
+                    ></i>
+                  </div>
+                  <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
+                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13px', lineHeight: 1.2 }}>
+                      Optical Port
+                    </div>
+                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '5px', fontSize: '11px' }}>
+                      <span
+                        className={`rounded-circle d-inline-block flex-shrink-0 ${opticalStatus.connected
+                          ? 'bg-success'
+                          : opticalStatus.checking
+                            ? 'bg-warning'
+                            : 'bg-danger'
+                          }`}
+                        style={{ width: '6px', height: '6px' }}
+                      ></span>
+                      <span
+                        className={`fw-medium text-truncate ${opticalStatus.connected
+                          ? 'text-success'
+                          : opticalStatus.checking
+                            ? 'text-warning-emphasis'
+                            : 'text-muted'
+                          }`}
+                        style={{ maxWidth: '110px' }}
+                        title={
+                          opticalStatus.connected
+                            ? (opticalStatus.friendlyName || selectedOpticalPort || opticalStatus.port || 'Connected')
+                            : opticalStatus.checking
+                              ? 'Connecting...'
+                              : 'Disconnected'
+                        }
+                      >
+                        {opticalStatus.connected
+                          ? (opticalStatus.friendlyName || selectedOpticalPort || opticalStatus.port || 'Connected')
+                          : opticalStatus.checking
+                            ? 'Connecting...'
+                            : 'Disconnected'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary px-2.5 py-1 fw-semibold shadow-xs d-inline-flex align-items-center text-nowrap flex-shrink-0"
+                  style={{ height: '32px', fontSize: '12px', gap: '5px' }}
+                  onClick={() => {
+                    setShowUsbSettings(true);
+                    checkOpticalCable(false);
+                    refreshPairedPorts();
+                  }}
+                  title="Configure Optical Port COM Settings"
+                >
+                  <i className="ti ti-settings" style={{ fontSize: '13px' }}></i>
+                  <span>Settings</span>
+                </button>
               </div>
             </div>
-          )}
+
+            {/* Col 3: Laser Port Card (Image 1 Style) */}
+            <div className="col-xl-3 col-lg-3 col-md-6 col-12">
+              <div
+                className="p-2 px-2.5 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
+                style={{ gap: '10px' }}
+              >
+                <div className="d-flex align-items-center" style={{ gap: '10px', minWidth: 0 }}>
+                  <div
+                    className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
+                    style={{ width: '38px', height: '38px' }}
+                  >
+                    <i
+                      className={`ti ${laserStatus.checking
+                        ? 'ti-loader spin text-warning'
+                        : laserStatus.connected
+                          ? 'ti-printer text-success'
+                          : 'ti-printer-off'
+                        } fs-4`}
+                    ></i>
+                  </div>
+                  <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
+                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13px', lineHeight: 1.2 }}>
+                      Laser Port
+                    </div>
+                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '5px', fontSize: '11px' }}>
+                      <span
+                        className={`rounded-circle d-inline-block flex-shrink-0 ${laserStatus.connected
+                          ? 'bg-success'
+                          : laserStatus.checking
+                            ? 'bg-warning'
+                            : 'bg-danger'
+                          }`}
+                        style={{ width: '6px', height: '6px' }}
+                      ></span>
+                      <span
+                        className={`fw-medium text-truncate ${laserStatus.connected
+                          ? 'text-success'
+                          : laserStatus.checking
+                            ? 'text-warning-emphasis'
+                            : 'text-muted'
+                          }`}
+                        style={{ maxWidth: '110px' }}
+                        title={
+                          laserStatus.connected
+                            ? (laserStatus.friendlyName || selectedLaserPort || laserStatus.port || 'Connected')
+                            : laserStatus.checking
+                              ? 'Connecting...'
+                              : 'Disconnected'
+                        }
+                      >
+                        {laserStatus.connected
+                          ? (laserStatus.friendlyName || selectedLaserPort || laserStatus.port || 'Connected')
+                          : laserStatus.checking
+                            ? 'Connecting...'
+                            : 'Disconnected'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary px-2.5 py-1 fw-semibold shadow-xs d-inline-flex align-items-center text-nowrap flex-shrink-0"
+                  style={{ height: '32px', fontSize: '12px', gap: '5px' }}
+                  onClick={() => {
+                    setShowLaserSettings(true);
+                    checkLaserStatus();
+                    refreshPairedLaserPorts();
+                  }}
+                  title="Configure Laser Port COM Settings"
+                >
+                  <i className="ti ti-settings" style={{ fontSize: '13px' }}></i>
+                  <span>Settings</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -4078,406 +4233,7 @@ export default function MeterBodyPrintConsole({
           <div className="col-xl-6 col-lg-6 col-12">
             <div className="card shadow-sm border-0 d-flex flex-column">
               <div className="card-body p-3.5 d-flex flex-column gap-3">
-                {/* 1. Optical Probe Cable Status & In-App Serial Port Connection Bar */}
-                <div
-                  className="p-3 rounded-3 border border-secondary-subtle bg-white d-flex flex-column shadow-2xs"
-                  style={{ gap: '10px' }}
-                >
-                  <div className="d-flex align-items-center justify-content-between" style={{ gap: '12px' }}>
-                    {/* Left: USB Icon + Port Information */}
-                    <div className="d-flex align-items-center flex-shrink-0" style={{ gap: '12px' }}>
-                      <div
-                        className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
-                        style={{ width: '38px', height: '38px' }}
-                      >
-                        <i
-                          className={`ti ${opticalStatus.checking
-                            ? 'ti-loader spin'
-                            : opticalStatus.connected
-                              ? 'ti-plug-connected'
-                              : 'ti-usb'
-                            } fs-5`}
-                        ></i>
-                      </div>
-
-                      <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
-                        <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13.5px', lineHeight: 1.2 }}>
-                          Optical Port
-                        </div>
-                        <div className="d-flex align-items-center small text-nowrap" style={{ gap: '6px', fontSize: '11px' }}>
-                          <span
-                            className={`rounded-circle d-inline-block flex-shrink-0 ${opticalStatus.connected
-                              ? 'bg-success'
-                              : opticalStatus.checking
-                                ? 'bg-warning'
-                                : 'bg-danger'
-                              }`}
-                            style={{ width: '6px', height: '6px' }}
-                          ></span>
-                          <span
-                            className={`fw-medium ${opticalStatus.connected
-                              ? 'text-success'
-                              : opticalStatus.checking
-                                ? 'text-warning-emphasis'
-                                : 'text-muted'
-                              }`}
-                          >
-                            {opticalStatus.connected
-                              ? (opticalStatus.friendlyName
-                                ? (opticalStatus.friendlyName.includes(formatSerialSummary(usbSerialConfig))
-                                  ? opticalStatus.friendlyName
-                                  : `${opticalStatus.friendlyName} (${formatSerialSummary(usbSerialConfig)})`)
-                                : `${selectedOpticalPort || opticalStatus.port || 'Connected'} (${formatSerialSummary(usbSerialConfig)})`)
-                              : opticalStatus.checking
-                                ? 'Connecting...'
-                                : 'Disconnected'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Settings Toggle Button */}
-                    <div className="d-flex align-items-center justify-content-end">
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${showUsbSettings
-                          ? 'text-white shadow-xs'
-                          : 'btn-outline-secondary'
-                          } px-2.5 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0`}
-                        style={{
-                          height: '32px',
-                          fontSize: '12px',
-                          gap: '5px',
-                          backgroundColor: showUsbSettings ? '#e05626' : undefined,
-                          borderColor: showUsbSettings ? '#e05626' : undefined
-                        }}
-                        onClick={() => {
-                          const next = !showUsbSettings;
-                          setShowUsbSettings(next);
-                          if (next) {
-                            checkOpticalCable(false);
-                            refreshPairedPorts();
-                          }
-                        }}
-                        title="Configure USB Port COM & Serial Settings"
-                      >
-                        <i className="ti ti-settings" style={{ fontSize: '13px' }}></i>
-                        <span>Settings</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Settings Accordion / Collapsible Panel */}
-                  {showUsbSettings && (
-                    <ComPortSettingsPanel
-                      title="USB PORT - COM PORT SETTINGS"
-                      config={usbSerialConfig}
-                      onChange={updateUsbConfig}
-                      onClose={() => setShowUsbSettings(false)}
-                      commChannelContent={
-                        <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-                          <div className="input-group input-group-sm flex-grow-1">
-                            <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                              <i className="ti ti-plug" style={{ fontSize: '12px' }}></i>
-                            </span>
-                            <select
-                              className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                              style={{ height: '34px', fontSize: '12px' }}
-                              value={selectedPortId}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '__pair_new__') {
-                                  setSelectedPortId('__pair_new__');
-                                  handleConnectCable(null, true);
-                                  return;
-                                }
-                                setSelectedPortId(val);
-                                if (val && val.startsWith('paired_')) {
-                                  const idx = parseInt(val.replace('paired_', ''), 10);
-                                  if (pairedPorts[idx]) {
-                                    setSelectedOpticalPort(pairedPorts[idx].friendlyName);
-                                  }
-                                } else if (val && val.startsWith('server_')) {
-                                  setSelectedOpticalPort(val.replace('server_', ''));
-                                }
-                              }}
-                              disabled={opticalStatus.checking || opticalStatus.connected}
-                            >
-                              <option value="" disabled>Select / Connect USB Port...</option>
-                              {opticalPortOptions.length > 0 ? (
-                                opticalPortOptions.map((opt) => (
-                                  <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
-                                    {opt.label}{opt.takenMsg}
-                                  </option>
-                                ))
-                              ) : (
-                                <option value="" disabled>No COM Port Detected</option>
-                              )}
-                              <option value="__pair_new__">
-                                Select / Pair COM Port from Device Manager...
-                              </option>
-                            </select>
-                          </div>
-
-                          {!opticalStatus.connected ? (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                              style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                              onClick={handleDirectConnectOptical}
-                              disabled={opticalStatus.checking}
-                              title="Connect Optical USB Port"
-                            >
-                              <i className={`ti ${opticalStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
-                              <span>{opticalStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                              style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                              onClick={handleToggleOpticalConnection}
-                              disabled={opticalStatus.checking}
-                              title={`Disconnect (${opticalStatus.friendlyName || opticalStatus.port || 'USB Port'})`}
-                            >
-                              <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
-                              <span>Disconnect</span>
-                            </button>
-                          )}
-                        </div>
-                      }
-                    />
-                  )}
-                </div>
-
-                {/* 2. Laser Port Serial COM Port Connection Bar */}
-                <div
-                  className="p-3 rounded-3 border border-secondary-subtle bg-white d-flex flex-column shadow-2xs"
-                  style={{ gap: '10px' }}
-                >
-                  <div className="d-flex align-items-center justify-content-between" style={{ gap: '12px' }}>
-                    {/* Left: Laser/Printer Icon + Port Information */}
-                    <div className="d-flex align-items-center flex-shrink-0" style={{ gap: '12px' }}>
-                      <div
-                        className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
-                        style={{ width: '38px', height: '38px' }}
-                      >
-                        <i
-                          className={`ti ${laserStatus.checking
-                            ? 'ti-loader spin'
-                            : laserStatus.connected
-                              ? 'ti-printer'
-                              : 'ti-printer-off'
-                            } fs-5`}
-                        ></i>
-                      </div>
-
-                      <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
-                        <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13.5px', lineHeight: 1.2 }}>
-                          Laser Port
-                        </div>
-                        <div className="d-flex align-items-center small text-nowrap" style={{ gap: '6px', fontSize: '11px' }}>
-                          <span
-                            className={`rounded-circle d-inline-block flex-shrink-0 ${laserStatus.connected
-                              ? 'bg-success'
-                              : laserStatus.checking
-                                ? 'bg-warning'
-                                : 'bg-danger'
-                              }`}
-                            style={{ width: '6px', height: '6px' }}
-                          ></span>
-                          <span
-                            className={`fw-medium ${laserStatus.connected
-                              ? 'text-success'
-                              : laserStatus.checking
-                                ? 'text-warning-emphasis'
-                                : 'text-muted'
-                              }`}
-                          >
-                            {laserStatus.connected
-                              ? (laserStatus.friendlyName
-                                ? (laserStatus.friendlyName.includes(formatSerialSummary(laserSerialConfig))
-                                  ? laserStatus.friendlyName
-                                  : `${laserStatus.friendlyName} (${formatSerialSummary(laserSerialConfig)})`)
-                                : `${selectedLaserPort || laserStatus.port || 'Connected'} (${formatSerialSummary(laserSerialConfig)})`)
-                              : laserStatus.checking
-                                ? 'Connecting...'
-                                : 'Disconnected'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Settings Toggle Button */}
-                    <div className="d-flex align-items-center justify-content-end">
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${showLaserSettings
-                          ? 'text-white shadow-xs'
-                          : 'btn-outline-secondary'
-                          } px-2.5 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0`}
-                        style={{
-                          height: '32px',
-                          fontSize: '12px',
-                          gap: '5px',
-                          backgroundColor: showLaserSettings ? '#e05626' : undefined,
-                          borderColor: showLaserSettings ? '#e05626' : undefined
-                        }}
-                        onClick={() => {
-                          const next = !showLaserSettings;
-                          setShowLaserSettings(next);
-                          if (next) {
-                            checkLaserStatus();
-                            refreshPairedLaserPorts();
-                          }
-                        }}
-                        title="Configure Laser Port COM & Serial Settings"
-                      >
-                        <i className="ti ti-settings" style={{ fontSize: '13px' }}></i>
-                        <span>Settings</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Settings Accordion / Collapsible Panel */}
-                  {showLaserSettings && (
-                    <ComPortSettingsPanel
-                      title="LASER PORT - COM PORT SETTINGS"
-                      config={laserSerialConfig}
-                      onChange={updateLaserConfig}
-                      onClose={() => setShowLaserSettings(false)}
-                      commChannelContent={
-                        <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-                          <div className="input-group input-group-sm flex-grow-1">
-                            <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                              <i className="ti ti-cpu" style={{ fontSize: '12px' }}></i>
-                            </span>
-                            <select
-                              className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                              style={{ height: '34px', fontSize: '12px' }}
-                              value={selectedLaserPortId}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '__laser_pair_new__') {
-                                  setSelectedLaserPortId('__laser_pair_new__');
-                                  handleConnectLaser(null, true);
-                                  return;
-                                }
-                                setSelectedLaserPortId(val);
-                                if (val && val.startsWith('laser_paired_')) {
-                                  const idx = parseInt(val.replace('laser_paired_', ''), 10);
-                                  if (pairedLaserPorts[idx]) {
-                                    setSelectedLaserPort(pairedLaserPorts[idx].friendlyName);
-                                  }
-                                } else if (val && val.startsWith('laser_server_')) {
-                                  setSelectedLaserPort(val.replace('laser_server_', ''));
-                                }
-                              }}
-                              disabled={laserStatus.checking || laserStatus.connected}
-                            >
-                              <option value="" disabled>Select / Connect Laser Port...</option>
-                              {laserPortOptions.length > 0 ? (
-                                laserPortOptions.map((opt) => (
-                                  <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
-                                    {opt.label}{opt.takenMsg}
-                                  </option>
-                                ))
-                              ) : (
-                                <option value="" disabled>No Laser Port Detected</option>
-                              )}
-                              <option value="__laser_pair_new__">
-                                Select / Pair COM Port from Device Manager...
-                              </option>
-                            </select>
-                          </div>
-
-                          {!laserStatus.connected ? (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                              style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                              onClick={handleDirectConnectLaser}
-                              disabled={laserStatus.checking}
-                              title="Connect Laser COM Port"
-                            >
-                              <i className={`ti ${laserStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
-                              <span>{laserStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                              style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                              onClick={handleToggleLaserConnection}
-                              disabled={laserStatus.checking}
-                              title={`Disconnect (${laserStatus.friendlyName || laserStatus.port || 'Laser Port'})`}
-                            >
-                              <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
-                              <span>Disconnect</span>
-                            </button>
-                          )}
-                        </div>
-                      }
-                    />
-                  )}
-                </div>
-
-                {/* 3. Live DLMS Optical Read Telemetry Showcase Card */}
-                {/* {lastReadMeterData && (
-                  <div className="card border-success border-2 bg-success-subtle bg-opacity-10 shadow-2xs">
-                    <div className="card-header bg-white py-2 px-3 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
-                      <div className="d-flex align-items-center gap-2">
-                        <i className="ti ti-scan text-success fs-5"></i>
-                        <span className="fw-bold text-success-emphasis">Meter DLMS Read (Live Telemetry)</span>
-                      </div>
-                      <span className="badge bg-success text-white font-mono px-2 py-0.5">
-                        <i className="ti ti-circle-check me-1"></i>Saved in DB &bull; Work ID: {activeFormId}
-                      </span>
-                    </div>
-                    <div className="card-body p-3">
-                      <div className="row g-2 font-mono">
-                        <div className="col-sm-6">
-                          <div className="p-2.5 bg-white rounded border">
-                            <span className="text-secondary small d-block">Meter Serial No:</span>
-                            <strong className="text-primary fs-6 d-flex align-items-center gap-1">
-                              <i className="ti ti-barcode"></i> {lastReadMeterData.serialNo || '-'}
-                            </strong>
-                            <small className="text-muted text-2xs">OBIS: 0.0.96.1.0.255</small>
-                          </div>
-                        </div>
-                        <div className="col-sm-6">
-                          <div className="p-2.5 bg-white rounded border">
-                            <span className="text-secondary small d-block">Device No:</span>
-                            <strong className="text-dark fs-6 d-flex align-items-center gap-1">
-                              <i className="ti ti-cpu"></i> {lastReadMeterData.deviceNo || '-'}
-                            </strong>
-                            <small className="text-muted text-2xs">OBIS: 0.0.96.1.2.255</small>
-                          </div>
-                        </div>
-                        <div className="col-sm-6">
-                          <div className="p-2.5 bg-white rounded border">
-                            <span className="text-secondary small d-block">Modem IMEI No:</span>
-                            <strong className="text-success fs-6 d-flex align-items-center gap-1">
-                              <i className="ti ti-antenna"></i> {lastReadMeterData.imeiNo || '-'}
-                            </strong>
-                            <small className="text-muted text-2xs">OBIS: 0.0.155.1.2.255 (Item #3)</small>
-                          </div>
-                        </div>
-                        <div className="col-sm-6">
-                          <div className="p-2.5 bg-white rounded border">
-                            <span className="text-secondary small d-block">NIC Sr.No:</span>
-                            <strong className="text-dark fs-6 d-flex align-items-center gap-1">
-                              <i className="ti ti-id"></i> {lastReadMeterData.nicSrNo || '-'}
-                            </strong>
-                            <small className="text-muted text-2xs">OBIS: 0.0.155.1.1.255</small>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )} */}
-
-                {/* 3. Active Work Order Specs Summary */}
+                {/* 1. Active Work Order Specs Summary */}
                 <div className="card border bg-light-subtle shadow-none">
                   <div className="card-body p-3">
                     <div className="d-flex align-items-center justify-content-between mb-2">
@@ -4941,6 +4697,196 @@ export default function MeterBodyPrintConsole({
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Popup: Optical Port COM Settings */}
+      <Modal
+        isOpen={showUsbSettings}
+        onClose={() => setShowUsbSettings(false)}
+        maxWidth="500px"
+        title={
+          <div className="d-flex align-items-center gap-2">
+            <i className="ti ti-adjustments text-danger fs-5"></i>
+            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
+              Optical Port - COM Port Settings
+            </span>
+          </div>
+        }
+      >
+        <ComPortSettingsPanel
+          title="OPTICAL PORT - COM PORT SETTINGS"
+          config={usbSerialConfig}
+          onChange={updateUsbConfig}
+          onClose={() => setShowUsbSettings(false)}
+          showHeader={false}
+          commChannelContent={
+            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
+              <div className="input-group input-group-sm flex-grow-1">
+                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
+                  <i className="ti ti-plug" style={{ fontSize: '12px' }}></i>
+                </span>
+                <select
+                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
+                  style={{ height: '34px', fontSize: '12px' }}
+                  value={selectedPortId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__pair_new__') {
+                      setSelectedPortId('__pair_new__');
+                      handleConnectCable(null, true);
+                      return;
+                    }
+                    setSelectedPortId(val);
+                    if (val && val.startsWith('paired_')) {
+                      const idx = parseInt(val.replace('paired_', ''), 10);
+                      if (pairedPorts[idx]) {
+                        setSelectedOpticalPort(pairedPorts[idx].friendlyName);
+                      }
+                    } else if (val && val.startsWith('server_')) {
+                      setSelectedOpticalPort(val.replace('server_', ''));
+                    }
+                  }}
+                  disabled={opticalStatus.checking || opticalStatus.connected}
+                >
+                  <option value="" disabled>Select / Connect USB Port...</option>
+                  {opticalPortOptions.length > 0 ? (
+                    opticalPortOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
+                        {opt.label}{opt.takenMsg}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No COM Port Detected</option>
+                  )}
+                  <option value="__pair_new__">
+                    Select / Pair COM Port from Device Manager...
+                  </option>
+                </select>
+              </div>
+
+              {!opticalStatus.connected ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
+                  onClick={handleDirectConnectOptical}
+                  disabled={opticalStatus.checking}
+                  title="Connect Optical USB Port"
+                >
+                  <i className={`ti ${opticalStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
+                  <span>{opticalStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
+                  onClick={handleToggleOpticalConnection}
+                  disabled={opticalStatus.checking}
+                  title={`Disconnect (${opticalStatus.friendlyName || opticalStatus.port || 'USB Port'})`}
+                >
+                  <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
+                  <span>Disconnect</span>
+                </button>
+              )}
+            </div>
+          }
+        />
+      </Modal>
+
+      {/* Modal Popup: Laser Port COM Settings */}
+      <Modal
+        isOpen={showLaserSettings}
+        onClose={() => setShowLaserSettings(false)}
+        maxWidth="500px"
+        title={
+          <div className="d-flex align-items-center gap-2">
+            <i className="ti ti-adjustments text-danger fs-5"></i>
+            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
+              Laser Port - COM Port Settings
+            </span>
+          </div>
+        }
+      >
+        <ComPortSettingsPanel
+          title="LASER PORT - COM PORT SETTINGS"
+          config={laserSerialConfig}
+          onChange={updateLaserConfig}
+          onClose={() => setShowLaserSettings(false)}
+          showHeader={false}
+          commChannelContent={
+            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
+              <div className="input-group input-group-sm flex-grow-1">
+                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
+                  <i className="ti ti-cpu" style={{ fontSize: '12px' }}></i>
+                </span>
+                <select
+                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
+                  style={{ height: '34px', fontSize: '12px' }}
+                  value={selectedLaserPortId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__laser_pair_new__') {
+                      setSelectedLaserPortId('__laser_pair_new__');
+                      handleConnectLaser(null, true);
+                      return;
+                    }
+                    setSelectedLaserPortId(val);
+                    if (val && val.startsWith('laser_paired_')) {
+                      const idx = parseInt(val.replace('laser_paired_', ''), 10);
+                      if (pairedLaserPorts[idx]) {
+                        setSelectedLaserPort(pairedLaserPorts[idx].friendlyName);
+                      }
+                    } else if (val && val.startsWith('laser_server_')) {
+                      setSelectedLaserPort(val.replace('laser_server_', ''));
+                    }
+                  }}
+                  disabled={laserStatus.checking || laserStatus.connected}
+                >
+                  <option value="" disabled>Select / Connect Laser Port...</option>
+                  {laserPortOptions.length > 0 ? (
+                    laserPortOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
+                        {opt.label}{opt.takenMsg}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No Laser Port Detected</option>
+                  )}
+                  <option value="__laser_pair_new__">
+                    Select / Pair COM Port from Device Manager...
+                  </option>
+                </select>
+              </div>
+
+              {!laserStatus.connected ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
+                  onClick={handleDirectConnectLaser}
+                  disabled={laserStatus.checking}
+                  title="Connect Laser COM Port"
+                >
+                  <i className={`ti ${laserStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
+                  <span>{laserStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
+                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
+                  onClick={handleToggleLaserConnection}
+                  disabled={laserStatus.checking}
+                  title={`Disconnect (${laserStatus.friendlyName || laserStatus.port || 'Laser Port'})`}
+                >
+                  <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
+                  <span>Disconnect</span>
+                </button>
+              )}
+            </div>
+          }
+        />
       </Modal>
 
       {/* 1st Time Connection Guide Modal for Other Laptops */}

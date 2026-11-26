@@ -126,8 +126,8 @@ function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelCon
 
       {/* 1. Send/Receive on Comm. Channel */}
       {commChannelContent && (
-        <div className="mb-3 pb-3 border-bottom border-secondary-subtle">
-          <label className="form-label fw-bold text-dark mb-2 d-block" style={{ fontSize: '12px' }}>
+        <div className="pb-3">
+          <label className="form-label fw-bold text-dark d-block" style={{ fontSize: '12px' }}>
             Send/Receive on Comm. Channel
           </label>
           {commChannelContent}
@@ -135,7 +135,7 @@ function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelCon
       )}
 
       {/* 2. COM Port Settings */}
-      <div className="fw-bold text-dark mb-2.5" style={{ fontSize: '12px' }}>
+      <div className="fw-bold text-dark" style={{ fontSize: '12px' }}>
         COM Port Settings
       </div>
       <div className="row g-3">
@@ -1870,107 +1870,139 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   return (
     <>
-      {/* Active Work Order Ribbon Banner (Exact Image Style) */}
-      <div className="card shadow-2xs border-0 mb-3 bg-white">
-        <div className="card-body py-2.5 px-3.5">
-          {!activeWorkForm ? (
-            <div className="text-secondary small fst-italic d-flex align-items-center gap-1.5 py-1">
-              <i className="ti ti-id-badge text-warning fs-5"></i>
-              <span>No Work ID currently assigned to Stage #4. Assign a Work ID in Stage Management to start production.</span>
-            </div>
-          ) : (
-            <div className="small font-mono text-secondary d-flex align-items-center justify-content-between gap-3 flex-wrap">
-              <div className="d-flex align-items-center gap-3 flex-wrap">
-                <span className="d-inline-flex align-items-center gap-1.5">
-                  <i className="ti ti-id-badge text-primary fs-5"></i>
-                  <strong className="text-dark">ACTIVE WORK ID:</strong>{' '}
-                  <span className="fw-bold" style={{ color: '#e05338' }}>{activeWorkForm.form_id}</span>
-                </span>
-                <span>&bull;</span>
-                <span>
-                  <strong>Batch:</strong> <span className="text-dark fw-bold">{activeWorkForm.batch_no || '-'}</span>
-                </span>
-                {activeWorkForm.month_year && (
-                  <>
-                    <span>&bull;</span>
-                    <span>
-                      <strong>Date:</strong> <span className="text-dark fw-bold">{activeWorkForm.month_year}</span>
+      {/* Work ID Switcher Ribbon & Port Connectivity Header Bar (Row: Col 6, Col 3, Col 3 - Exact Stage 9 Style) */}
+      <div className="card shadow-2xs border-0 mb-4 bg-white">
+        <div className="card-body py-2 px-3">
+          <div className="row align-items-center g-3">
+            {/* Col 6: Active Work ID Info */}
+            <div className="col-xl-6 col-lg-6 col-12">
+              {!activeWorkForm ? (
+                <div className="text-secondary small fst-italic d-flex align-items-center gap-1.5 py-1">
+                  <i className="ti ti-id-badge text-warning fs-5"></i>
+                  <span>No Work ID currently assigned to Stage #4. Assign a Work ID in Stage Management to start production.</span>
+                </div>
+              ) : (
+                <div className="small font-mono text-secondary d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <span className="d-inline-flex align-items-center gap-1.5">
+                      <i className="ti ti-id-badge text-danger fs-5"></i>
+                      <strong className="text-dark">ACTIVE WORK ID:</strong>{' '}
+                      <span className="fw-bold" style={{ color: '#e05338' }}>{activeWorkForm.form_id}</span>
                     </span>
-                  </>
-                )}
-                <span>&bull;</span>
-                <span>
-                  <strong>Target:</strong> <span className="text-dark fw-bold">{activeWorkForm.target_quantity || 0}</span>
-                </span>
-                <span>&bull;</span>
-                <span>
-                  <strong>Completed:</strong> <span className="text-success fw-bold">{activeWorkForm.completed_quantity || 0}</span>
-                </span>
-                <span>&bull;</span>
-                <span className={`badge px-2.5 py-1 ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary text-white'}`}>
-                  {activeWorkForm.status || 'IN_PROGRESS'}
-                </span>
-              </div>
+                    <span className="text-muted">|</span>
+                    <span>
+                      <strong>Batch:</strong> <span className="text-dark fw-bold">{activeWorkForm.batch_no || '-'}</span>
+                    </span>
+                    {activeWorkForm.month_year && (
+                      <>
+                        <span className="text-muted">|</span>
+                        <span>
+                          <strong>Date:</strong> <span className="text-dark fw-bold">{activeWorkForm.month_year}</span>
+                        </span>
+                      </>
+                    )}
+                    <span className="text-muted">|</span>
+                    <span>
+                      <strong>Target:</strong> <span className="text-dark fw-bold">{activeWorkForm.target_quantity || 0}</span>
+                    </span>
+                    <span className="text-muted">|</span>
+                    <span>
+                      <strong>Completed:</strong> <span className="text-success fw-bold">{activeWorkForm.completed_quantity || 0}</span>
+                    </span>
+                    {activeWorkForm.status && (
+                      <>
+                        <span className="text-muted">|</span>
+                        <span className={`badge px-2 py-0.5 ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary text-white'}`}>
+                          {activeWorkForm.status}
+                        </span>
+                      </>
+                    )}
+                  </div>
 
-              {operatorWorkForms && operatorWorkForms.length > 1 && (
-                <div className="d-flex align-items-center gap-2">
-                  <span className="small text-muted fw-semibold text-nowrap">Switch Work ID:</span>
-                  <select
-                    className="form-select form-select-sm font-mono fw-semibold py-0.5"
-                    style={{ minWidth: '150px', fontSize: '12px' }}
-                    value={activeWorkForm.id || activeWorkForm.form_id}
-                    onChange={(e) => {
-                      const sel = operatorWorkForms.find(f => String(f.id) === e.target.value || f.form_id === e.target.value);
-                      if (sel) setActiveWorkForm(sel);
-                    }}
-                  >
-                    {operatorWorkForms.map(f => (
-                      <option key={f.id || f.form_id} value={f.id || f.form_id}>
-                        {f.form_id} ({f.batch_no || 'BATCH'})
-                      </option>
-                    ))}
-                  </select>
+                  {operatorWorkForms && operatorWorkForms.length > 1 && (
+                    <div className="d-flex align-items-center gap-1.5 ms-auto">
+                      <span className="text-muted small fw-semibold text-nowrap">Switch:</span>
+                      <select
+                        className="form-select form-select-sm font-mono fw-semibold py-0.5"
+                        style={{ minWidth: '130px', fontSize: '11.5px' }}
+                        value={activeWorkForm.id || activeWorkForm.form_id}
+                        onChange={(e) => {
+                          const sel = operatorWorkForms.find(f => String(f.id) === e.target.value || f.form_id === e.target.value);
+                          if (sel) setActiveWorkForm(sel);
+                        }}
+                      >
+                        {operatorWorkForms.map(f => (
+                          <option key={f.id || f.form_id} value={f.id || f.form_id}>
+                            {f.form_id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Top Header Bar */}
-      <div className="row mb-3">
-        <div className="col-12">
-          <div className="p-3 bg-white rounded-3 shadow-sm border d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
-            <div className="d-flex align-items-center gap-3 flex-wrap">
-              {/* NIC Receive Port Card */}
+            {/* Col 3: NIC Receive Port Card */}
+            <div className="col-xl-3 col-lg-3 col-md-6 col-12">
               <div
-                className="p-2.5 px-3 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
-                style={{ minWidth: '310px', gap: '14px' }}
+                className="p-2 px-2.5 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
+                style={{ gap: '10px' }}
               >
-                <div className="d-flex align-items-center" style={{ gap: '12px' }}>
+                <div className="d-flex align-items-center" style={{ gap: '10px', minWidth: 0 }}>
                   <div
                     className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
-                    style={{ width: '40px', height: '40px' }}
+                    style={{ width: '38px', height: '38px' }}
                   >
-                    <i className={`ti ${usbConnected ? 'ti-plug-connected text-success' : 'ti-usb'} fs-4`}></i>
+                    <i
+                      className={`ti ${isConnectingPort
+                        ? 'ti-loader spin text-warning'
+                        : usbConnected
+                          ? 'ti-plug-connected text-success'
+                          : 'ti-usb'
+                        } fs-4`}
+                    ></i>
                   </div>
                   <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
-                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13.5px', lineHeight: 1.2 }}>
+                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13px', lineHeight: 1.2 }}>
                       NIC Receive Port
                     </div>
-                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '6px', fontSize: '11.5px' }}>
+                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '5px', fontSize: '11px' }}>
                       <span
-                        className={`rounded-circle d-inline-block flex-shrink-0 ${usbConnected ? 'bg-success' : 'bg-danger'}`}
-                        style={{ width: '7px', height: '7px' }}
+                        className={`rounded-circle d-inline-block flex-shrink-0 ${usbConnected
+                          ? 'bg-success'
+                          : isConnectingPort
+                            ? 'bg-warning'
+                            : 'bg-danger'
+                          }`}
+                        style={{ width: '6px', height: '6px' }}
                       ></span>
-                      <span className={`fw-medium ${usbConnected ? 'text-success' : 'text-muted'}`}>
+                      <span
+                        className={`fw-medium text-truncate ${usbConnected
+                          ? 'text-success'
+                          : isConnectingPort
+                            ? 'text-warning-emphasis'
+                            : 'text-muted'
+                          }`}
+                        style={{ maxWidth: '110px' }}
+                        title={
+                          usbConnected
+                            ? (detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName || detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName || usbDeviceName || selectedPort || 'Connected')
+                            : isConnectingPort
+                              ? 'Connecting...'
+                              : 'Disconnected'
+                        }
+                      >
                         {usbConnected
-                          ? `${detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName || detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName || usbDeviceName || selectedPort || 'Connected'} (${jigSerialConfig.baudRate} Baud)`
-                          : 'Disconnected'}
+                          ? (detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName || detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName || usbDeviceName || selectedPort || 'Connected')
+                          : isConnectingPort
+                            ? 'Connecting...'
+                            : 'Disconnected'}
                       </span>
                     </div>
                   </div>
                 </div>
+
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary px-2.5 py-1 fw-semibold shadow-xs d-inline-flex align-items-center text-nowrap flex-shrink-0"
@@ -1982,36 +2014,68 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                   <span>Settings</span>
                 </button>
               </div>
+            </div>
 
-              {/* Laser Port Card */}
+            {/* Col 3: Laser Port Card */}
+            <div className="col-xl-3 col-lg-3 col-md-6 col-12">
               <div
-                className="p-2.5 px-3 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
-                style={{ minWidth: '310px', gap: '14px' }}
+                className="p-2 px-2.5 rounded-3 bg-white shadow-2xs d-flex align-items-center justify-content-between"
+                style={{ gap: '10px' }}
               >
-                <div className="d-flex align-items-center" style={{ gap: '12px' }}>
+                <div className="d-flex align-items-center" style={{ gap: '10px', minWidth: 0 }}>
                   <div
                     className="rounded-2 d-flex align-items-center justify-content-center flex-shrink-0 bg-light text-secondary border border-secondary-subtle"
-                    style={{ width: '40px', height: '40px' }}
+                    style={{ width: '38px', height: '38px' }}
                   >
-                    <i className={`ti ${laserConnected ? 'ti-printer text-success' : 'ti-printer-off'} fs-4`}></i>
+                    <i
+                      className={`ti ${isConnectingLaserPort
+                        ? 'ti-loader spin text-warning'
+                        : laserConnected
+                          ? 'ti-printer text-success'
+                          : 'ti-printer-off'
+                        } fs-4`}
+                    ></i>
                   </div>
                   <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
-                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13.5px', lineHeight: 1.2 }}>
+                    <div className="fw-semibold text-dark text-nowrap" style={{ fontSize: '13px', lineHeight: 1.2 }}>
                       Laser Port
                     </div>
-                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '6px', fontSize: '11.5px' }}>
+                    <div className="d-flex align-items-center small text-nowrap" style={{ gap: '5px', fontSize: '11px' }}>
                       <span
-                        className={`rounded-circle d-inline-block flex-shrink-0 ${laserConnected ? 'bg-success' : 'bg-danger'}`}
-                        style={{ width: '7px', height: '7px' }}
+                        className={`rounded-circle d-inline-block flex-shrink-0 ${laserConnected
+                          ? 'bg-success'
+                          : isConnectingLaserPort
+                            ? 'bg-warning'
+                            : 'bg-danger'
+                          }`}
+                        style={{ width: '6px', height: '6px' }}
                       ></span>
-                      <span className={`fw-medium ${laserConnected ? 'text-success' : 'text-muted'}`}>
+                      <span
+                        className={`fw-medium text-truncate ${laserConnected
+                          ? 'text-success'
+                          : isConnectingLaserPort
+                            ? 'text-warning-emphasis'
+                            : 'text-muted'
+                          }`}
+                        style={{ maxWidth: '110px' }}
+                        title={
+                          laserConnected
+                            ? (detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.friendlyName || detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.shortName || laserDeviceName || selectedLaserPort || 'Connected')
+                            : isConnectingLaserPort
+                              ? 'Connecting...'
+                              : 'Disconnected'
+                        }
+                      >
                         {laserConnected
-                          ? `${detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.friendlyName || detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.shortName || laserDeviceName || selectedLaserPort || 'Connected'} (${laserSerialConfig.baudRate} Baud)`
-                          : 'Disconnected'}
+                          ? (detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.friendlyName || detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.shortName || laserDeviceName || selectedLaserPort || 'Connected')
+                          : isConnectingLaserPort
+                            ? 'Connecting...'
+                            : 'Disconnected'}
                       </span>
                     </div>
                   </div>
                 </div>
+
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary px-2.5 py-1 fw-semibold shadow-xs d-inline-flex align-items-center text-nowrap flex-shrink-0"
@@ -2023,24 +2087,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                   <span>Settings</span>
                 </button>
               </div>
-            </div>
-
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              {/* Start Jig Test Button */}
-              <button
-                className={`btn px-4 py-2 fw-bold shadow-sm ${isStartDisabled ? 'btn-secondary opacity-75' : 'btn-primary'
-                  }`}
-                onClick={handleJigStart}
-                disabled={isStartDisabled}
-                title={isDemoMode ? "Simulate Full Jig Test Protocol & Telemetry" : "Send START to USB -> Receive Data -> Check Duplicates -> Save DB"}
-              >
-                <i className={`ti ${testState === 'STARTING' || testState === 'SAVING' ? 'ti-loader spin' : 'ti-player-play'} me-1`}></i>
-                {testState === 'STARTING'
-                  ? (isDemoMode ? 'Simulating Protocol...' : 'Communicating Protocol...')
-                  : testState === 'SAVING'
-                    ? 'Saving to DB...'
-                    : (isDemoMode ? 'Start Demo Test' : 'Start Jig test')}
-              </button>
             </div>
           </div>
         </div>
@@ -2290,12 +2336,29 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           </div>
 
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            {/* Print Button (To the left of Validate QR's) */}
+            {/* Start Jig Test Button (Moved near Print button) */}
+            <button
+              className={`btn px-4 py-2 fw-bold shadow-sm d-inline-flex align-items-center text-nowrap ${isStartDisabled ? 'btn-secondary opacity-75' : 'btn-primary'
+                }`}
+              onClick={handleJigStart}
+              disabled={isStartDisabled}
+              title={isDemoMode ? "Simulate Full Jig Test Protocol & Telemetry" : "Send START to USB -> Receive Data -> Check Duplicates -> Save DB"}
+            >
+              <i className={`ti ${testState === 'STARTING' || testState === 'SAVING' ? 'ti-loader spin' : 'ti-player-play'} me-1.5`}></i>
+              {testState === 'STARTING'
+                ? (isDemoMode ? 'Simulating Protocol...' : 'Communicating Protocol...')
+                : testState === 'SAVING'
+                  ? 'Saving to DB...'
+                  : (isDemoMode ? 'Start Demo Test' : 'Start Jig test')}
+            </button>
+
+            {/* Print Button */}
             <button
               type="button"
               onClick={handleOpenPrintModal}
               disabled={!jigData || !jigData.ch}
-              className="btn btn-primary px-4 fw-bold shadow-2xs"
+              className="btn px-4 py-2 fw-bold shadow-2xs text-white d-inline-flex align-items-center"
+              style={{ backgroundColor: '#ff7043', borderColor: '#ff7043' }}
               title="Print Channel JSON Data & Send to Printer API"
             >
               <i className="ti ti-printer me-1.5 fs-5"></i> Print
@@ -2306,7 +2369,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
               type="button"
               onClick={() => setIsQrModalOpen(true)}
               disabled={!jigData || !jigData.ch}
-              className="btn btn-outline-primary px-4 fw-bold shadow-2xs"
+              className="btn btn-outline-primary px-4 py-2 fw-bold shadow-2xs d-inline-flex align-items-center"
               title="Open QR Validation and Scanner Interface for tested NIC cards"
             >
               <i className="ti ti-qrcode me-1.5 fs-5"></i> Validate QR's
@@ -2317,10 +2380,10 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
               type="button"
               onClick={handleExportToExcel}
               disabled={isExportDisabled}
-              className="btn btn-success px-4 fw-bold text-white shadow-sm"
+              className="btn btn-success px-4 py-2 fw-bold text-white shadow-sm d-inline-flex align-items-center"
               title={isSavedToDb ? "Download Excel (.csv) with S.No, IMEI, Payload JSON, NIC UUID & Status" : "Save data to DB first to enable Excel download"}
             >
-              <i className="ti ti-file-spreadsheet me-1"></i> Download Excel
+              <i className="ti ti-file-spreadsheet me-1.5 fs-5"></i> Download Excel
             </button>
           </div>
         </div>
