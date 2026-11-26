@@ -48,7 +48,7 @@ const renderPdfFirstPageToDataUrl = async (pdfSource) => {
 /**
  * Standard Utility / Discom Partner Logo Presets (SVG Data URIs)
  */
-export const PRESET_UTILITY_LOGOS = [
+const PRESET_UTILITY_LOGOS = [
   {
     id: 'tatapower',
     name: 'Tata Power',

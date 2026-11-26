@@ -1,5 +1,5 @@
 import React from 'react';
-import { STAGE_08_FIELDS } from './Stage08Page';
+import { STAGE_08_FIELDS } from './stage08.constants';
 
 export default function Stage08View({ viewingForm }) {
   if (!viewingForm) return null;

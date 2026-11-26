@@ -48,59 +48,59 @@ export default function JigChannelGrid({
   };
 
   return (
-    <div className="mb-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h4 className="fs-5 fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+    <div className="mb-3">
+      <div className="d-flex justify-content-between align-items-center mb-2.5">
+        <h4 className="fs-6 fw-bold mb-0 text-dark d-flex align-items-center gap-2">
           <i className="ti ti-layout-grid text-primary"></i>
           <span>8-Channel Hardware Telemetry Output</span>
         </h4>
       </div>
 
-      <div className="row g-3">
+      <div className="row g-2.5">
         {channels.map((c) => {
           const style = getChannelStyle(c);
           return (
             <div key={c.ch} className="col-lg-3 col-md-6 col-12">
               <div
-                className="card h-100 transition-all shadow-sm"
-                style={{ border: style.border, backgroundColor: '#ffffff' }}
+                className="card transition-all shadow-sm"
+                style={{ border: style.border, backgroundColor: '#ffffff', borderRadius: '8px' }}
               >
-                <div className="card-header bg-transparent py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
-                  <div className="d-flex align-items-center gap-1">
-                    <i className="ti ti-cpu text-primary"></i>
-                    <span className="fw-bold text-dark small">Channel {c.ch}</span>
+                <div className="card-header bg-transparent py-1.5 px-2.5 d-flex justify-content-between align-items-center border-bottom">
+                  <div className="d-flex align-items-center gap-1.5">
+                    <i className="ti ti-cpu text-primary" style={{ fontSize: '13px' }}></i>
+                    <span className="fw-bold text-dark" style={{ fontSize: '12px' }}>Channel {c.ch}</span>
                   </div>
-                  <span className={`badge ${style.badge} font-mono px-2 py-0.5 text-xs`}>
+                  <span className={`badge ${style.badge} font-mono px-1.5 py-0.5`} style={{ fontSize: '10.5px' }}>
                     <i className={`ti ${style.icon} me-1`}></i>
                     {style.text}
                   </span>
                 </div>
 
-                <div className="card-body p-3 font-mono text-xs">
-                  <div className="d-flex flex-column gap-1.5">
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">IMEI:</span>
-                      <strong className="text-dark font-mono text-truncate" style={{ maxWidth: '140px' }}>
+                <div className="card-body p-2 px-2.5 font-mono" style={{ fontSize: '11.5px' }}>
+                  <div className="d-flex flex-column gap-1">
+                    <div className="d-flex justify-content-between align-items-center py-0.5 border-bottom border-light-subtle">
+                      <span className="text-secondary" style={{ fontSize: '11px' }}>IMEI:</span>
+                      <strong className="text-dark font-mono text-truncate" style={{ maxWidth: '140px', fontSize: '11.5px' }}>
                         {c.imei || '-'}
                       </strong>
                     </div>
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">HW / FW:</span>
-                      <span className="text-dark">{c.hwv || '-'} / {c.fwv || '-'}</span>
+                    <div className="d-flex justify-content-between align-items-center py-0.5 border-bottom border-light-subtle">
+                      <span className="text-secondary" style={{ fontSize: '11px' }}>HW / FW:</span>
+                      <span className="text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.hwv || '-'} / {c.fwv || '-'}</span>
                     </div>
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">SIM Status:</span>
-                      <span className={c.sim === 'INSERTED' ? 'text-success fw-bold' : 'text-muted'}>
+                    <div className="d-flex justify-content-between align-items-center py-0.5 border-bottom border-light-subtle">
+                      <span className="text-secondary" style={{ fontSize: '11px' }}>SIM Status:</span>
+                      <span className={c.sim === 'INSERTED' ? 'text-success fw-bold' : 'text-muted'} style={{ fontSize: '11.5px' }}>
                         {c.sim || '-'}
                       </span>
                     </div>
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">Signal:</span>
-                      <span className="text-dark">{c.rssi || '-'}</span>
+                    <div className="d-flex justify-content-between align-items-center py-0.5 border-bottom border-light-subtle">
+                      <span className="text-secondary" style={{ fontSize: '11px' }}>Signal:</span>
+                      <span className="text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.rssi || '-'}</span>
                     </div>
-                    <div className="d-flex justify-content-between">
-                      <span className="text-muted">Voltage / Curr:</span>
-                      <span className="text-dark">{c.volt || '-'} / {c.curr || '-'}</span>
+                    <div className="d-flex justify-content-between align-items-center py-0.5">
+                      <span className="text-secondary" style={{ fontSize: '11px' }}>Voltage / Curr:</span>
+                      <span className="text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.volt || '-'} / {c.curr || '-'}</span>
                     </div>
                   </div>
                 </div>

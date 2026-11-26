@@ -2258,32 +2258,21 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
       {/* Active Work Order / Work ID Card assigned by Admin/Supervisor */}
       {/* 8-Channel Telemetry Grid */}
-      <div className="mb-4">
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <h4 className="fs-5 fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+      <div className="mb-1">
+        <div className="d-flex justify-content-between align-items-center mb-2">
+          <h4 className="fs-6 fw-bold mb-0 text-dark d-flex align-items-center gap-2">
             <i className="ti ti-layout-grid text-primary"></i>
             <span>8-Channel Hardware Telemetry Output</span>
           </h4>
-          <div className="d-flex align-items-center gap-2">
-            <button
-              type="button"
-              className="btn btn-sm btn-light border text-secondary font-mono"
-              onClick={() => setShowLogsConsole(!showLogsConsole)}
-            >
-              <i className="ti ti-terminal me-1"></i>
-              {showLogsConsole ? 'Hide Serial Logs' : 'View Serial Logs'}
-            </button>
-            <span className="badge bg-light text-secondary border font-mono text-xs">2 Rows &bull; 8 Channel Boxes</span>
-          </div>
         </div>
 
         {/* Row 1: Channels 1, 2, 3, 4 */}
-        <div className="row g-3 mb-3">
+        <div className="row g-2.5 mb-2">
           {activeChannels.slice(0, 4).map((c) => renderChannelBox(c))}
         </div>
 
         {/* Row 2: Channels 5, 6, 7, 8 */}
-        <div className="row g-3 mb-4">
+        <div className="row g-2.5 mb-3">
           {activeChannels.slice(4, 8).map((c) => renderChannelBox(c))}
         </div>
 
@@ -2292,7 +2281,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           <div className="card bg-dark text-white border-secondary mb-3 font-mono shadow-sm">
             <div className="card-header bg-dark border-secondary py-2 px-3 d-flex justify-content-between align-items-center">
               <span className="small text-success fw-bold d-flex align-items-center gap-1">
-                <i className="ti ti-terminal"></i> Serial Communication Log (Docklight Style)
+                <i className="ti ti-terminal"></i> Serial Communication Log
               </span>
               <button className="btn btn-xs btn-outline-light" onClick={() => setJigLogs([])}>Clear Log</button>
             </div>
@@ -2314,23 +2303,31 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       </div>
 
       {/* Bottom Action Footer Bar */}
-      <div className="card shadow-sm border-0 mb-4">
-        <div className="card-body p-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 bg-light rounded-3">
+      <div className="card shadow-sm border-0 mb-3">
+        <div className="card-body py-2 px-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 bg-light rounded-3">
           <div className="d-flex align-items-center gap-2">
             <button
               type="button"
               onClick={handleResetJigConsole}
               disabled={testState === 'STARTING' || testState === 'SAVING'}
-              className="btn btn-outline-secondary px-3"
+              className="btn btn-sm btn-outline-secondary px-3 py-1.5 fw-semibold"
             >
               <i className="ti ti-x me-1"></i> Reset
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary px-3 py-1.5 font-mono"
+              onClick={() => setShowLogsConsole(!showLogsConsole)}
+            >
+              <i className="ti ti-terminal me-1"></i>
+              {showLogsConsole ? 'Hide Serial Logs' : 'View Serial Logs'}
             </button>
           </div>
 
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            {/* Start Jig Test Button (Moved near Print button) */}
+            {/* Start Jig Test Button */}
             <button
-              className={`btn px-4 py-2 fw-bold shadow-sm d-inline-flex align-items-center text-nowrap ${isStartDisabled ? 'btn-secondary opacity-75' : 'btn-primary'
+              className={`btn btn-sm px-3.5 py-1.5 fw-bold shadow-sm d-inline-flex align-items-center text-nowrap ${isStartDisabled ? 'btn-secondary opacity-75' : 'btn-primary'
                 }`}
               onClick={handleJigStart}
               disabled={isStartDisabled}
@@ -2349,11 +2346,11 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
               type="button"
               onClick={handleOpenPrintModal}
               disabled={!jigData || !jigData.ch}
-              className="btn px-4 py-2 fw-bold shadow-2xs text-white d-inline-flex align-items-center"
+              className="btn btn-sm px-3.5 py-1.5 fw-bold shadow-2xs text-white d-inline-flex align-items-center"
               style={{ backgroundColor: '#ff7043', borderColor: '#ff7043' }}
               title="Print Channel JSON Data & Send to Printer API"
             >
-              <i className="ti ti-printer me-1.5 fs-5"></i> Print
+              <i className="ti ti-printer me-1.5"></i> Print
             </button>
 
             {/* Validate QR's Button */}
@@ -2361,21 +2358,10 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
               type="button"
               onClick={() => setIsQrModalOpen(true)}
               disabled={!jigData || !jigData.ch}
-              className="btn btn-outline-primary px-4 py-2 fw-bold shadow-2xs d-inline-flex align-items-center"
+              className="btn btn-sm btn-outline-primary px-3.5 py-1.5 fw-bold shadow-2xs d-inline-flex align-items-center"
               title="Open QR Validation and Scanner Interface for tested NIC cards"
             >
-              <i className="ti ti-qrcode me-1.5 fs-5"></i> Validate QR's
-            </button>
-
-            {/* Download Excel Button */}
-            <button
-              type="button"
-              onClick={handleExportToExcel}
-              disabled={isExportDisabled}
-              className="btn btn-success px-4 py-2 fw-bold text-white shadow-sm d-inline-flex align-items-center"
-              title={isSavedToDb ? "Download Excel (.csv) with S.No, IMEI, Payload JSON, NIC UUID & Status" : "Save data to DB first to enable Excel download"}
-            >
-              <i className="ti ti-file-spreadsheet me-1.5 fs-5"></i> Download Excel
+              <i className="ti ti-qrcode me-1.5"></i> Validate QR's
             </button>
           </div>
         </div>
@@ -2875,16 +2861,16 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
     return (
       <div key={c.ch} className="col-lg-3 col-md-6 col-12">
-        <div className="card h-100 transition-all shadow-sm" style={cardBorderStyle}>
+        <div className="card transition-all shadow-sm" style={{ ...cardBorderStyle, borderRadius: '8px' }}>
           {/* Card Header */}
-          <div className="card-header bg-transparent py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
-            <div className="d-flex align-items-center gap-1">
-              <i className="ti ti-cpu text-primary"></i>
-              <span className="fw-bold text-dark small">Channel {c.ch}</span>
+          <div className="card-header bg-transparent py-1.5 px-2.5 d-flex justify-content-between align-items-center border-bottom">
+            <div className="d-flex align-items-center gap-1.5">
+              <i className="ti ti-cpu text-primary" style={{ fontSize: '13px' }}></i>
+              <span className="fw-bold text-dark" style={{ fontSize: '12px' }}>Channel {c.ch}</span>
             </div>
 
             <div className="d-flex align-items-center gap-1">
-              <span className={`badge ${badgeClass} font-mono px-2 py-0.5 text-xs`}>
+              <span className={`badge ${badgeClass} font-mono px-1.5 py-0.5`} style={{ fontSize: '10.5px' }}>
                 <i className={`ti ${statusIcon} me-1`}></i>
                 {badgeText}
               </span>
@@ -2893,46 +2879,50 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                 className={`btn btn-xs py-0.5 px-1.5 border-0 ${isEditing ? 'btn-secondary' : 'btn-outline-primary'}`}
                 onClick={() => handleStartEditCard(c)}
                 title="Edit Channel Data Manually"
+                style={{ lineHeight: 1 }}
               >
-                <i className={`ti ${isEditing ? 'ti-x' : 'ti-pencil'} text-xs`}></i>
+                <i className={`ti ${isEditing ? 'ti-x' : 'ti-pencil'}`} style={{ fontSize: '11px' }}></i>
               </button>
             </div>
           </div>
 
           {/* Card Body */}
-          <div className="card-body p-3 font-mono text-xs">
+          <div className="card-body p-2 px-2.5 font-mono" style={{ fontSize: '11.5px' }}>
             {isEditing ? (
               /* Inline Edit Mode Form */
-              <div className="d-flex flex-column gap-2 bg-white p-2 rounded border shadow-2xs">
-                <div className="fw-bold text-primary border-bottom pb-1 mb-1 text-2xs d-flex justify-content-between align-items-center">
-                  <span><i className="ti ti-edit me-1"></i>Edit Channel {c.ch} Data</span>
-                  <span className="text-muted text-2xs">Manual Input</span>
+              <div className="d-flex flex-column gap-1.5 bg-white p-2 rounded border shadow-2xs">
+                <div className="fw-bold text-primary border-bottom pb-1 mb-0.5 text-2xs d-flex justify-content-between align-items-center">
+                  <span><i className="ti ti-edit me-1"></i>Edit Ch {c.ch}</span>
+                  <span className="text-muted text-3xs">Manual Input</span>
                 </div>
                 <div>
-                  <label className="text-secondary text-2xs mb-0 fw-semibold">IMEI Number:</label>
+                  <label className="text-secondary text-3xs mb-0 fw-semibold">IMEI Number:</label>
                   <input
                     type="text"
-                    className="form-control form-control-sm font-mono py-1 text-xs fw-bold"
+                    className="form-control form-control-sm font-mono py-0.5 px-1.5 text-xs fw-bold"
+                    style={{ height: '28px', fontSize: '11px' }}
                     value={editFormData.imei}
                     onChange={(e) => setEditFormData({ ...editFormData, imei: e.target.value })}
-                    placeholder="Enter IMEI (e.g. 86099...)"
+                    placeholder="Enter IMEI..."
                   />
                 </div>
                 <div className="row g-1">
                   <div className="col-6">
-                    <label className="text-secondary text-2xs mb-0">HWV:</label>
+                    <label className="text-secondary text-3xs mb-0">HWV:</label>
                     <input
                       type="text"
-                      className="form-control form-control-sm font-mono py-0.5 text-xs"
+                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
+                      style={{ height: '26px', fontSize: '11px' }}
                       value={editFormData.hwv}
                       onChange={(e) => setEditFormData({ ...editFormData, hwv: e.target.value })}
                     />
                   </div>
                   <div className="col-6">
-                    <label className="text-secondary text-2xs mb-0">FWV:</label>
+                    <label className="text-secondary text-3xs mb-0">FWV:</label>
                     <input
                       type="text"
-                      className="form-control form-control-sm font-mono py-0.5 text-xs"
+                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
+                      style={{ height: '26px', fontSize: '11px' }}
                       value={editFormData.fwv}
                       onChange={(e) => setEditFormData({ ...editFormData, fwv: e.target.value })}
                     />
@@ -2940,19 +2930,21 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                 </div>
                 <div className="row g-1">
                   <div className="col-6">
-                    <label className="text-secondary text-2xs mb-0">SIG:</label>
+                    <label className="text-secondary text-3xs mb-0">SIG:</label>
                     <input
                       type="text"
-                      className="form-control form-control-sm font-mono py-0.5 text-xs"
+                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
+                      style={{ height: '26px', fontSize: '11px' }}
                       value={editFormData.sig}
                       onChange={(e) => setEditFormData({ ...editFormData, sig: e.target.value })}
                     />
                   </div>
                   <div className="col-6">
-                    <label className="text-secondary text-2xs mb-0">Comms Tech:</label>
+                    <label className="text-secondary text-3xs mb-0">Comms Tech:</label>
                     <input
                       type="text"
-                      className="form-control form-control-sm font-mono py-0.5 text-xs"
+                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
+                      style={{ height: '26px', fontSize: '11px' }}
                       value={editFormData.comms_technology}
                       onChange={(e) => setEditFormData({ ...editFormData, comms_technology: e.target.value })}
                     />
@@ -2961,17 +2953,19 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                 <div className="d-flex justify-content-end gap-1 mt-1 pt-1 border-top">
                   <button
                     type="button"
-                    className="btn btn-xs btn-primary fw-bold px-2 py-1"
+                    className="btn btn-xs btn-primary fw-bold px-2 py-0.5"
+                    style={{ fontSize: '11px' }}
                     onClick={() => handleUpdateChannelCard(c.ch, false)}
                   >
-                    <i className="ti ti-check me-1"></i>Update
+                    <i className="ti ti-check me-0.5"></i>Update
                   </button>
                   <button
                     type="button"
-                    className="btn btn-xs btn-success text-white fw-bold px-2 py-1"
+                    className="btn btn-xs btn-success text-white fw-bold px-2 py-0.5"
+                    style={{ fontSize: '11px' }}
                     onClick={() => handleUpdateChannelCard(c.ch, true)}
                   >
-                    <i className="ti ti-database-import me-1"></i>Update & Save DB
+                    <i className="ti ti-database-import me-0.5"></i>Save DB
                   </button>
                 </div>
               </div>
@@ -2979,59 +2973,59 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
               /* Display Mode */
               <>
                 {c.nic_uuid && (
-                  <div className="d-flex justify-content-between mb-1 pb-1 border-bottom border-light">
-                    <span className="text-secondary">nic_uuid:</span>
-                    <span className="fw-bold text-primary font-mono">{c.nic_uuid}</span>
+                  <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                    <span className="text-secondary" style={{ fontSize: '11px' }}>nic_uuid:</span>
+                    <span className="fw-bold text-primary font-mono" style={{ fontSize: '11.5px' }}>{c.nic_uuid}</span>
                   </div>
                 )}
-                <div className="d-flex justify-content-between mb-1 pb-1 border-bottom border-light">
-                  <span className="text-secondary">imei:</span>
-                  <span className={`fw-bold font-mono ${cls.isDuplicate ? 'text-warning text-dark' : 'text-dark'}`}>
+                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                  <span className="text-secondary" style={{ fontSize: '11px' }}>imei:</span>
+                  <span className={`fw-bold font-mono ${cls.isDuplicate ? 'text-warning text-dark' : 'text-dark'}`} style={{ fontSize: '11.5px' }}>
                     {c.imei || '-'}
                   </span>
                 </div>
-                <div className="d-flex justify-content-between mb-1 pb-1 border-bottom border-light">
-                  <span className="text-secondary">hwv:</span>
-                  <span className="fw-bold text-dark font-mono">{c.hwv || '-'}</span>
+                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                  <span className="text-secondary" style={{ fontSize: '11px' }}>hwv:</span>
+                  <span className="fw-bold text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.hwv || '-'}</span>
                 </div>
-                <div className="d-flex justify-content-between mb-1 pb-1 border-bottom border-light">
-                  <span className="text-secondary">fwv:</span>
-                  <span className="fw-bold text-dark font-mono">{c.fwv || '-'}</span>
+                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                  <span className="text-secondary" style={{ fontSize: '11px' }}>fwv:</span>
+                  <span className="fw-bold text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.fwv || '-'}</span>
                 </div>
 
                 {/* Card Bottom: Sig, DB Status & QR-Print Status */}
-                <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom border-light">
-                  <span className="text-secondary">sig:</span>
-                  <span className={`fw-bold ${c.sig ? 'text-success' : 'text-muted'}`}>{c.sig || '-'}</span>
+                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                  <span className="text-secondary" style={{ fontSize: '11px' }}>sig:</span>
+                  <span className={`fw-bold ${c.sig ? 'text-success' : 'text-muted'}`} style={{ fontSize: '11.5px' }}>{c.sig || '-'}</span>
                 </div>
 
-                <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom border-light">
-                  <span className="text-secondary">DB:</span>
+                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                  <span className="text-secondary" style={{ fontSize: '11px' }}>DB:</span>
                   {testState === 'SAVING' ? (
-                    <span className="text-primary fw-bold text-2xs d-inline-flex align-items-center gap-1">
+                    <span className="text-primary fw-bold text-3xs d-inline-flex align-items-center gap-1">
                       <i className="ti ti-loader spin"></i>Processing...
                     </span>
                   ) : cls.isDuplicate ? (
-                    <span className="badge bg-warning-subtle text-dark border border-warning text-2xs px-1.5 py-0.5">
+                    <span className="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5" style={{ fontSize: '10px' }}>
                       DUPLICATE
                     </span>
                   ) : isSaved ? (
-                    <span className="badge bg-success-subtle text-success border border-success text-2xs px-1.5 py-0.5">
+                    <span className="badge bg-success-subtle text-success border border-success px-1.5 py-0.5" style={{ fontSize: '10px' }}>
                       <i className="ti ti-check me-0.5"></i>SAVED
                     </span>
                   ) : (
-                    <span className="text-muted text-2xs">-</span>
+                    <span className="text-muted" style={{ fontSize: '11px' }}>-</span>
                   )}
                 </div>
 
-                <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom border-light">
-                  <span className="text-secondary">QR-Print:</span>
+                <div className="d-flex justify-content-between align-items-center py-1">
+                  <span className="text-secondary" style={{ fontSize: '11px' }}>QR-Print:</span>
                   {isPrinted ? (
-                    <span className="badge bg-success-subtle text-success border border-success text-2xs px-1.5 py-0.5">
+                    <span className="badge bg-success-subtle text-success border border-success px-1.5 py-0.5" style={{ fontSize: '10px' }}>
                       Printed
                     </span>
                   ) : (
-                    <span className="text-muted text-2xs">-</span>
+                    <span className="text-muted" style={{ fontSize: '11px' }}>-</span>
                   )}
                 </div>
               </>

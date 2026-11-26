@@ -5,8 +5,9 @@ import { stage08Service } from '../../../services/stages/stage08.service';
 import { showSuccessAlert, showErrorAlert, showConfirmAlert } from '../../../utils/swal';
 import Modal from '../../../components/common/Modal/Modal';
 import webSerialService from '../../../services/common/webSerialService';
+import { STAGE_08_FIELDS, METER_READER_FIELDS } from './stage08.constants';
 
-export const isDummyPortName = (name) => {
+const isDummyPortName = (name) => {
   if (!name || typeof name !== 'string') return true;
   const n = name.trim().toLowerCase();
   return (
@@ -23,21 +24,21 @@ export const isDummyPortName = (name) => {
   );
 };
 
-export const extractPortKey = (val) => {
+const extractPortKey = (val) => {
   if (!val) return '';
   const match = String(val).match(/COM\d+/i);
   return match ? match[0].toUpperCase() : String(val).trim().toUpperCase();
 };
 
-export const BAUD_RATE_OPTIONS = [
+const BAUD_RATE_OPTIONS = [
   '110', '300', '600', '1200', '2400', '4800', '9600', '14400', '19200',
   '28800', '38400', '56000', '57600', '115200', '230400', 'Custom Rate', 'None'
 ];
 
-export const DATA_BITS_OPTIONS = ['5', '6', '7', '8', 'Custom'];
-export const PARITY_OPTIONS = ['None', 'Even', 'Odd', 'Mark', 'Space', 'Custom'];
-export const STOP_BITS_OPTIONS = ['1', '1.5', '2', 'Custom'];
-export const PARITY_ERROR_CHAR_OPTIONS = [
+const DATA_BITS_OPTIONS = ['5', '6', '7', '8', 'Custom'];
+const PARITY_OPTIONS = ['None', 'Even', 'Odd', 'Mark', 'Space', 'Custom'];
+const STOP_BITS_OPTIONS = ['1', '1.5', '2', 'Custom'];
+const PARITY_ERROR_CHAR_OPTIONS = [
   '(ignore)',
   "35 ('#')",
   "42 ('*')",
@@ -46,7 +47,7 @@ export const PARITY_ERROR_CHAR_OPTIONS = [
   'Custom'
 ];
 
-export const DEFAULT_SERIAL_CONFIG = {
+const DEFAULT_SERIAL_CONFIG = {
   baudRate: '9600',
   customBaudRate: '',
   dataBits: '8',
@@ -60,7 +61,7 @@ export const DEFAULT_SERIAL_CONFIG = {
   comPortLabel: ''
 };
 
-export const getEffectiveSerialConfig = (cfg) => {
+const getEffectiveSerialConfig = (cfg) => {
   const baud = cfg.baudRate === 'Custom Rate' ? Number(cfg.customBaudRate) || 9600 : Number(cfg.baudRate) || 9600;
   const data = cfg.dataBits === 'Custom' ? Number(cfg.customDataBits) || 8 : Number(cfg.dataBits) || 8;
   const parityVal = (cfg.parity === 'Custom' ? cfg.customParity : cfg.parity || 'none').toLowerCase();
@@ -75,7 +76,7 @@ export const getEffectiveSerialConfig = (cfg) => {
   };
 };
 
-export const formatSerialSummary = (cfg) => {
+const formatSerialSummary = (cfg) => {
   const eff = getEffectiveSerialConfig(cfg);
   const pChar = (eff.parity || 'n').charAt(0).toUpperCase();
   return `${eff.baudRate}-${eff.dataBits}-${pChar}-${eff.stopBits}`;
@@ -267,36 +268,6 @@ function ComPortSettingsPanel({ title, config, onChange, onClose, commChannelCon
     </div>
   );
 }
-
-export const STAGE_08_FIELDS = [
-  { key: 'hologramSeal1', label: 'Hologram Seal 1', shortLabel: 'Hologram 1', placeholder: 'Scan or enter Hologram Seal 1 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal2', label: 'Hologram Seal 2', shortLabel: 'Hologram 2', placeholder: 'Scan or enter Hologram Seal 2 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal3', label: 'Hologram Seal 3', shortLabel: 'Hologram 3', placeholder: 'Scan or enter Hologram Seal 3 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal4', label: 'Hologram Seal 4', shortLabel: 'Hologram 4', placeholder: 'Scan or enter Hologram Seal 4 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal5', label: 'Hologram Seal 5', shortLabel: 'Hologram 5', placeholder: 'Scan or enter Hologram Seal 5 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal6', label: 'Hologram Seal 6', shortLabel: 'Hologram 6', placeholder: 'Scan or enter Hologram Seal 6 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal7', label: 'Hologram Seal 7', shortLabel: 'Hologram 7', placeholder: 'Scan or enter Hologram Seal 7 barcode...', icon: 'ti-shield-check' },
-  { key: 'hologramSeal8', label: 'Hologram Seal 8', shortLabel: 'Hologram 8', placeholder: 'Scan or enter Hologram Seal 8 barcode...', icon: 'ti-shield-check' },
-  { key: 'meterLeftSeal1', label: 'Meter Left Seal 1', shortLabel: 'Left Seal 1', placeholder: 'Scan or enter Meter Left Seal 1 barcode...', icon: 'ti-tag' },
-  { key: 'meterLeftSeal2', label: 'Meter Left Seal 2', shortLabel: 'Left Seal 2', placeholder: 'Scan or enter Meter Left Seal 2 barcode...', icon: 'ti-tag' },
-  { key: 'meterRightSeal1', label: 'Meter Right Seal 1', shortLabel: 'Right Seal 1', placeholder: 'Scan or enter Meter Right Seal 1 barcode...', icon: 'ti-tag' },
-  { key: 'meterRightSeal2', label: 'Meter Right Seal 2', shortLabel: 'Right Seal 2', placeholder: 'Scan or enter Meter Right Seal 2 barcode...', icon: 'ti-tag' },
-  { key: 'modemSeal', label: 'Modem Seal', shortLabel: 'Modem Seal', placeholder: 'Scan or enter Modem Seal barcode...', icon: 'ti-wifi' },
-  { key: 'looseSeal1', label: 'Loose Seal 1', shortLabel: 'Loose Seal 1', placeholder: 'Scan or enter Loose Seal 1 barcode...', icon: 'ti-barcode' },
-  { key: 'looseSeal2', label: 'Loose Seal 2', shortLabel: 'Loose Seal 2', placeholder: 'Scan or enter Loose Seal 2 barcode...', icon: 'ti-barcode' },
-  { key: 'looseSeal3', label: 'Loose Seal 3', shortLabel: 'Loose Seal 3', placeholder: 'Scan or enter Loose Seal 3 barcode...', icon: 'ti-barcode' },
-  { key: 'nicSerialNumber', label: 'NIC SN', shortLabel: 'NIC SN', placeholder: 'Scan or enter NIC SN barcode...', icon: 'ti-cpu' }
-];
-
-export const METER_READER_FIELDS = [
-  { key: 'uid', label: '1. Uid', icon: 'ti-id' },
-  { key: 'status', label: '2. Status', icon: 'ti-circle-check' },
-  { key: 'meterSn', label: '3. Meter SN', icon: 'ti-barcode' },
-  { key: 'imei', label: '4. IMEI', icon: 'ti-device-mobile' },
-  { key: 'nicSn', label: '5. NIC SN', icon: 'ti-cpu' },
-  { key: 'db', label: '6. DB', icon: 'ti-database' },
-  { key: 'result', label: '7. Result', icon: 'ti-clipboard-check' }
-];
 
 export default function Stage08Page() {
   const auth = useAuth?.() || {};
@@ -560,7 +531,6 @@ export default function Stage08Page() {
         setSelectedOpticalPort(res.port || portPath);
         setSelectedPortId(`server_${res.port || portPath}`);
         setShowUsbSettings(false);
-        showSuccessAlert('Optical Port Connected', `Connected to ${res.friendlyName || res.port || portPath} @ ${summary}.`);
         return true;
       } else {
         setOpticalStatus(prev => ({ ...prev, connected: false, checking: false }));
@@ -632,7 +602,6 @@ export default function Stage08Page() {
             checking: false
           });
           setShowUsbSettings(false);
-          showSuccessAlert('Optical Port Connected', `Optical Port connected to this device (${res.portName}).`);
           return true;
         }
       } catch (err) {

@@ -36,7 +36,7 @@ const DEFAULT_PRINT_SPECS = {
   lcdReading: ''
 };
 
-export const isDummyPortName = (name) => {
+const isDummyPortName = (name) => {
   if (!name || typeof name !== 'string') return true;
   const n = name.trim().toLowerCase();
   return (
@@ -53,13 +53,13 @@ export const isDummyPortName = (name) => {
   );
 };
 
-export const extractPortKey = (val) => {
+const extractPortKey = (val) => {
   if (!val) return '';
   const match = String(val).match(/COM\d+/i);
   return match ? match[0].toUpperCase() : String(val).trim().toUpperCase();
 };
 
-export const BAUD_RATE_OPTIONS = [
+const BAUD_RATE_OPTIONS = [
   '110',
   '300',
   '600',
@@ -79,10 +79,10 @@ export const BAUD_RATE_OPTIONS = [
   'None'
 ];
 
-export const DATA_BITS_OPTIONS = ['5', '6', '7', '8', 'Custom'];
-export const PARITY_OPTIONS = ['None', 'Even', 'Odd', 'Mark', 'Space', 'Custom'];
-export const STOP_BITS_OPTIONS = ['1', '1.5', '2', 'Custom'];
-export const PARITY_ERROR_CHAR_OPTIONS = [
+const DATA_BITS_OPTIONS = ['5', '6', '7', '8', 'Custom'];
+const PARITY_OPTIONS = ['None', 'Even', 'Odd', 'Mark', 'Space', 'Custom'];
+const STOP_BITS_OPTIONS = ['1', '1.5', '2', 'Custom'];
+const PARITY_ERROR_CHAR_OPTIONS = [
   '(ignore)',
   "35 ('#')",
   "42 ('*')",
@@ -91,7 +91,7 @@ export const PARITY_ERROR_CHAR_OPTIONS = [
   'Custom'
 ];
 
-export const DEFAULT_SERIAL_CONFIG = {
+const DEFAULT_SERIAL_CONFIG = {
   baudRate: '9600',
   customBaudRate: '',
   dataBits: '8',
@@ -105,7 +105,7 @@ export const DEFAULT_SERIAL_CONFIG = {
   comPortLabel: ''
 };
 
-export const getEffectiveSerialConfig = (cfg) => {
+const getEffectiveSerialConfig = (cfg) => {
   if (!cfg) return { baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, parityErrorChar: "63 ('?')", comPortLabel: '' };
   const baudRate = cfg.baudRate === 'Custom Rate'
     ? (Number(cfg.customBaudRate) || 9600)
@@ -132,7 +132,7 @@ export const getEffectiveSerialConfig = (cfg) => {
   };
 };
 
-export const formatSerialSummary = (cfg) => {
+const formatSerialSummary = (cfg) => {
   const eff = getEffectiveSerialConfig(cfg);
   const pChar = eff.parity ? eff.parity.charAt(0).toUpperCase() : 'N';
   return `${eff.baudRate} ${eff.dataBits}${pChar}${eff.stopBits}`;
