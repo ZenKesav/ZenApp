@@ -1909,14 +1909,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                     <span>
                       <strong>Completed:</strong> <span className="text-success fw-bold">{activeWorkForm.completed_quantity || 0}</span>
                     </span>
-                    {activeWorkForm.status && (
-                      <>
-                        <span className="text-muted">|</span>
-                        <span className={`badge px-2 py-0.5 ${activeWorkForm.status === 'IN_PROGRESS' ? 'bg-success text-white' : 'bg-primary text-white'}`}>
-                          {activeWorkForm.status}
-                        </span>
-                      </>
-                    )}
                   </div>
 
                   {operatorWorkForms && operatorWorkForms.length > 1 && (
