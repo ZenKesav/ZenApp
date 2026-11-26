@@ -290,6 +290,7 @@ export default function Stage08Page() {
     db: '',
     result: ''
   });
+  const [meterReadStatus, setMeterReadStatus] = useState(null); // null | 'success' | 'failed'
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Verified records history
@@ -298,6 +299,8 @@ export default function Stage08Page() {
 
   const inputRefs = useRef({});
   const meterReaderRefs = useRef({});
+  const autoReadTriggeredRef = useRef(false);
+  const handleReadMeterOpticalRef = useRef();
 
   // ==========================================
   // Optical Port State & Serial Configuration
@@ -746,6 +749,11 @@ export default function Stage08Page() {
 
   // Read Meter via Optical Probe
   const handleReadMeterOptical = async () => {
+    if (!isAllScanned) {
+      showErrorAlert('Seals Incomplete', 'Please scan all active security seal fields before reading meter.');
+      return;
+    }
+
     if (!opticalStatus.connected) {
       showErrorAlert('Optical Port Disconnected', 'Please connect Optical Port before reading meter.');
       setShowUsbSettings(true);
@@ -785,27 +793,41 @@ export default function Stage08Page() {
           db: savedRecord ? 'SAVED' : 'PASS',
           result: 'PASS'
         });
+        setMeterReadStatus('success');
 
         if (validSerial) {
           setMeterSerial(validSerial);
         }
-
-        // If NIC SN field is active on stage 8, automatically populate it
-        if (validNic && activeFields.some(f => f.key === 'nicSerialNumber')) {
-          setFieldValues(prev => ({
-            ...prev,
-            nicSerialNumber: validNic
-          }));
-        }
       } else {
+        setMeterReadStatus('failed');
+        setMeterReaderData({
+          uid: 'FAIL',
+          status: 'FAIL',
+          meterSn: 'READ FAIL',
+          imei: 'READ FAIL',
+          nicSn: 'READ FAIL',
+          db: 'FAILED',
+          result: 'FAIL'
+        });
         showErrorAlert('Read Failed', res?.message || 'Failed to read meter data via optical probe.');
       }
     } catch (err) {
+      setMeterReadStatus('failed');
+      setMeterReaderData({
+        uid: 'ERROR',
+        status: 'FAIL',
+        meterSn: 'ERROR',
+        imei: 'ERROR',
+        nicSn: 'ERROR',
+        db: 'FAILED',
+        result: 'FAIL'
+      });
       showErrorAlert('Optical Read Error', err.message || 'Error communicating with optical probe.');
     } finally {
       setIsReadingOptical(false);
     }
   };
+  handleReadMeterOpticalRef.current = handleReadMeterOptical;
 
   // Demo Read for testing/simulation without physical probe
   const handleDemoReadMeter = () => {
@@ -824,15 +846,9 @@ export default function Stage08Page() {
       db: 'PASS',
       result: 'PASS'
     });
+    setMeterReadStatus('success');
 
     setMeterSerial(demoSerial);
-
-    if (activeFields.some(f => f.key === 'nicSerialNumber')) {
-      setFieldValues(prev => ({
-        ...prev,
-        nicSerialNumber: demoNic
-      }));
-    }
   };
 
   // Auto-connect and scan Optical Port on mount / page reload
@@ -1216,8 +1232,31 @@ export default function Stage08Page() {
     }
   }, [activeFields.length]);
 
+  // Automatically read meter when all active security seal fields are scanned
+  useEffect(() => {
+    if (!isAllScanned) {
+      autoReadTriggeredRef.current = false;
+      return;
+    }
+
+    if (
+      isAllScanned &&
+      opticalStatus.connected &&
+      !autoReadTriggeredRef.current &&
+      !isReadingOptical &&
+      meterReadStatus !== 'success'
+    ) {
+      autoReadTriggeredRef.current = true;
+      const timer = setTimeout(() => {
+        handleReadMeterOpticalRef.current?.();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [isAllScanned, opticalStatus.connected, isReadingOptical, meterReadStatus]);
+
   // Clear all form inputs
   const handleClear = () => {
+    autoReadTriggeredRef.current = false;
     setMeterSerial('');
     setFieldValues({});
     setMeterReaderData({
@@ -1229,6 +1268,7 @@ export default function Stage08Page() {
       db: '',
       result: ''
     });
+    setMeterReadStatus(null);
     if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
       inputRefs.current[activeFields[0].key].focus();
     }
@@ -1281,6 +1321,7 @@ export default function Stage08Page() {
         }
 
         // Reset inputs for next meter
+        autoReadTriggeredRef.current = false;
         setMeterSerial('');
         setFieldValues({});
         setMeterReaderData({
@@ -1292,6 +1333,7 @@ export default function Stage08Page() {
           db: '',
           result: ''
         });
+        setMeterReadStatus(null);
         if (activeFields.length > 0 && inputRefs.current[activeFields[0].key]) {
           inputRefs.current[activeFields[0].key].focus();
         }
@@ -1366,13 +1408,12 @@ export default function Stage08Page() {
                   style={{ width: '36px', height: '36px' }}
                 >
                   <i
-                    className={`ti ${
-                      opticalStatus.checking
-                        ? 'ti-loader spin text-warning'
-                        : opticalStatus.connected
-                          ? 'ti-plug-connected text-success'
-                          : 'ti-usb'
-                    } fs-4`}
+                    className={`ti ${opticalStatus.checking
+                      ? 'ti-loader spin text-warning'
+                      : opticalStatus.connected
+                        ? 'ti-plug-connected text-success'
+                        : 'ti-usb'
+                      } fs-4`}
                   ></i>
                 </div>
                 <div className="d-flex flex-column justify-content-center" style={{ gap: '2px', minWidth: 0 }}>
@@ -1381,23 +1422,21 @@ export default function Stage08Page() {
                   </div>
                   <div className="d-flex align-items-center small text-nowrap" style={{ gap: '5px', fontSize: '11px' }}>
                     <span
-                      className={`rounded-circle d-inline-block flex-shrink-0 ${
-                        opticalStatus.connected
-                          ? 'bg-success'
-                          : opticalStatus.checking
-                            ? 'bg-warning'
-                            : 'bg-danger'
-                      }`}
+                      className={`rounded-circle d-inline-block flex-shrink-0 ${opticalStatus.connected
+                        ? 'bg-success'
+                        : opticalStatus.checking
+                          ? 'bg-warning'
+                          : 'bg-danger'
+                        }`}
                       style={{ width: '6px', height: '6px' }}
                     ></span>
                     <span
-                      className={`fw-medium text-truncate ${
-                        opticalStatus.connected
-                          ? 'text-success'
-                          : opticalStatus.checking
-                            ? 'text-warning-emphasis'
-                            : 'text-muted'
-                      }`}
+                      className={`fw-medium text-truncate ${opticalStatus.connected
+                        ? 'text-success'
+                        : opticalStatus.checking
+                          ? 'text-warning-emphasis'
+                          : 'text-muted'
+                        }`}
                       style={{ maxWidth: '110px' }}
                       title={
                         opticalStatus.connected
@@ -1496,53 +1535,60 @@ export default function Stage08Page() {
               <div className="d-flex align-items-center gap-2">
                 <button
                   type="button"
-                  className={`btn btn-sm fw-semibold d-inline-flex align-items-center gap-1.5 ${
-                    opticalStatus.connected ? 'btn-primary text-white' : 'btn-outline-secondary'
-                  }`}
+                  className={`btn btn-sm fw-semibold d-inline-flex align-items-center gap-1.5 ${isAllScanned && opticalStatus.connected
+                    ? 'btn-primary text-white shadow-xs'
+                    : 'btn-secondary text-white'
+                    }`}
                   onClick={handleReadMeterOptical}
-                  disabled={isReadingOptical}
+                  disabled={!isAllScanned || isReadingOptical}
+                  style={{ cursor: !isAllScanned || isReadingOptical ? 'not-allowed' : 'pointer' }}
                   title={
-                    opticalStatus.connected
-                      ? `Read meter via Optical Probe (${opticalStatus.friendlyName || selectedOpticalPort || opticalStatus.port})`
-                      : 'Connect Optical Port first to read meter'
+                    !isAllScanned
+                      ? 'Scan all active security seal fields first to enable Read Meter'
+                      : opticalStatus.connected
+                        ? `Read meter via Optical Probe (${opticalStatus.friendlyName || selectedOpticalPort || opticalStatus.port})`
+                        : 'Connect Optical Port first to read meter'
                   }
                 >
                   <i className={`ti ${isReadingOptical ? 'ti-loader spin' : 'ti-scan'}`}></i>
-                  <span>{isReadingOptical ? 'Reading Meter...' : 'Read Meter (Optical)'}</span>
+                  <span>{isReadingOptical ? 'Reading Meter...' : 'Read Meter'}</span>
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-success fw-semibold d-inline-flex align-items-center gap-1"
-                  onClick={handleDemoReadMeter}
-                  disabled={isReadingOptical}
-                  title="Demo / simulate reading meter data"
-                >
-                  <i className="ti ti-keyboard"></i>
-                  <span>Demo Read</span>
-                </button>
+
               </div>
             </div>
             <div className="row row-cols-2 row-cols-sm-3 row-cols-md-5 g-3">
-              {METER_READER_FIELDS.map((field) => (
-                <div className="col" key={field.key}>
-                  <div className="mb-2">
-                    <span className="fw-semibold text-secondary small d-flex align-items-center gap-1.5 mb-1">
-                      <i className={`ti ${field.icon || 'ti-tag'} text-secondary`}></i>
-                      {field.label}
-                    </span>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      tabIndex={-1}
-                      ref={(el) => (meterReaderRefs.current[field.key] = el)}
-                      className="form-control form-control-sm py-1 font-mono fw-medium bg-light text-secondary border-secondary-subtle"
-                      value={meterReaderData[field.key] || ''}
-                      style={{ cursor: 'not-allowed' }}
-                    />
+              {METER_READER_FIELDS.map((field) => {
+                const rawVal = meterReaderData[field.key] || '';
+                const valUpper = String(rawVal).trim().toUpperCase();
+                const isFieldFailed = meterReadStatus === 'failed' || valUpper === 'FAIL' || valUpper === 'FAILED' || valUpper === 'ERROR' || valUpper === 'READ FAIL';
+                const isFieldSuccess = (meterReadStatus === 'success' || (Boolean(meterReaderData.meterSn) && (meterReaderData.status === 'PASS' || meterReaderData.status === 'SUCCESS') && (meterReaderData.result === 'PASS' || meterReaderData.result === 'SUCCESS'))) && !isFieldFailed && valUpper.length > 0;
+
+                const textColor = isFieldSuccess ? '#16a34a' : isFieldFailed ? '#dc2626' : undefined;
+
+                return (
+                  <div className="col" key={field.key}>
+                    <div className="mb-2">
+                      <span className="fw-semibold text-secondary small d-flex align-items-center gap-1.5 mb-1">
+                        <i className={`ti ${field.icon || 'ti-tag'} text-secondary`}></i>
+                        {field.label}
+                      </span>
+                      <input
+                        type="text"
+                        readOnly
+                        tabIndex={-1}
+                        ref={(el) => (meterReaderRefs.current[field.key] = el)}
+                        className={`form-control form-control-sm py-1 font-mono bg-light border-secondary-subtle ${textColor ? 'fw-bold' : 'fw-medium text-secondary'}`}
+                        value={rawVal}
+                        style={{
+                          cursor: 'not-allowed',
+                          color: textColor || undefined,
+                          WebkitTextFillColor: textColor || undefined
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
