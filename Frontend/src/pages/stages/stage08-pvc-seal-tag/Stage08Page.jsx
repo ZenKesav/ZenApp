@@ -735,11 +735,6 @@ export default function Stage08Page() {
             nicSerialNumber: validNic
           }));
         }
-
-        showSuccessAlert(
-          'Meter Read Successful',
-          `Scanned Meter SN: ${validSerial || 'N/A'}${validNic ? ` | NIC: ${validNic}` : ''}`
-        );
       } else {
         showErrorAlert('Read Failed', res?.message || 'Failed to read meter data via optical probe.');
       }
@@ -776,8 +771,6 @@ export default function Stage08Page() {
         nicSerialNumber: demoNic
       }));
     }
-
-    showSuccessAlert('Demo Meter Loaded', `Meter: ${demoSerial} | NIC: ${demoNic}`);
   };
 
   // Auto-check port on mount
