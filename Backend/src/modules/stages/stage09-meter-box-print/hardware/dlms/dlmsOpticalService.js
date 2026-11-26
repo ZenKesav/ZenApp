@@ -1047,6 +1047,31 @@ class DlmsOpticalService {
         }
       } catch (e) { }
 
+      // STEP 6b: Fallback to IS 15959 standard OBIS 0.0.96.1.4.255 if NIC is still not read
+      if (!readNicVal) {
+        try {
+          const parsedNicFallback = await readDlmsAttribute(
+            client,
+            portInstance,
+            '0.0.96.1.4.255',
+            2,
+            null,
+            'NIC Serial Number (IS 15959 fallback)'
+          );
+          if (parsedNicFallback && typeof parsedNicFallback === 'string') {
+            const cleanNic = sanitizeDbText(parsedNicFallback);
+            if (cleanNic && !/^0+$/.test(cleanNic) && /^[A-Za-z0-9_\-\.\:\/ ]+$/.test(cleanNic)) {
+              readNicVal = cleanNic;
+            }
+          } else if (Array.isArray(parsedNicFallback)) {
+            const validStr = parsedNicFallback
+              .map(x => (typeof x === 'string' ? sanitizeDbText(x) : null))
+              .find(x => x && !/^0+$/.test(x) && /^[A-Za-z0-9_\-\.\:\/ ]+$/.test(x));
+            if (validStr) readNicVal = validStr;
+          }
+        } catch (e) { }
+      }
+
       // Send Disconnect (DISC) frame
       try {
         const discFrames = client.disconnectRequest();

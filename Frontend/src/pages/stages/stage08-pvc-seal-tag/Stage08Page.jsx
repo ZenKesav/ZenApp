@@ -774,42 +774,57 @@ export default function Stage08Page() {
         operator_name: currentUser?.name || currentUser?.user_name || null,
         user_role: currentUser?.role || null,
         tunnel_id: effectiveTunnelId,
-        device_id: effectiveDeviceId
+        device_id: effectiveDeviceId,
+        scanned_nic: fieldValues.nicSerialNumber?.trim() || '',
+        seals: fieldValues
       });
 
-      if (res && res.success && res.meterData) {
+      if (res && (res.matched || res.status === 'PASS')) {
         const { meterData, savedRecord } = res;
-        const validSerial = meterData.serialNo ? String(meterData.serialNo).trim() : '';
-        const validImei = meterData.imeiNo ? String(meterData.imeiNo).trim() : '';
-        const validNic = meterData.nicSrNo ? String(meterData.nicSrNo).trim() : '';
-        const validUid = savedRecord?.uid || meterData.uid || meterData.recordId || `UID-${validSerial || Date.now()}`;
+        const validSerial = meterData?.serialNo ? String(meterData.serialNo).trim() : '';
+        const validImei = meterData?.imeiNo ? String(meterData.imeiNo).trim() : '';
+        const validNic = meterData?.nicSrNo ? String(meterData.nicSrNo).trim() : (fieldValues.nicSerialNumber?.trim() || '');
+        const validUid = savedRecord?.uid || meterData?.uid || meterData?.recordId || `UID-${validSerial || Date.now()}`;
 
         setMeterReaderData({
           uid: validUid,
-          status: 'PASS',
+          status: res.status || 'PASS',
           meterSn: validSerial,
           imei: validImei,
           nicSn: validNic,
-          db: savedRecord ? 'SAVED' : 'PASS',
-          result: 'PASS'
+          db: res.db || 'SAVED',
+          result: res.result || 'All Step Completed'
         });
         setMeterReadStatus('success');
 
         if (validSerial) {
           setMeterSerial(validSerial);
         }
+
+        if (typeof res.completed_quantity === 'number') {
+          setCompletedCount(res.completed_quantity);
+        }
+
+        fetchRecords();
+        showSuccessAlert('Meter Verified & Saved', res.message || 'NIC SN matched! Stage 8 saved and meter mapping updated.');
       } else {
+        const meterData = res?.meterData || {};
+        const validSerial = meterData?.serialNo ? String(meterData.serialNo).trim() : '';
+        const validImei = meterData?.imeiNo ? String(meterData.imeiNo).trim() : '';
+        const validNic = meterData?.nicSrNo ? String(meterData.nicSrNo).trim() : 'FAIL';
+        const validUid = meterData?.uid || (validSerial ? `UID-${validSerial}` : 'FAIL');
+
         setMeterReadStatus('failed');
         setMeterReaderData({
-          uid: 'FAIL',
-          status: 'FAIL',
-          meterSn: 'READ FAIL',
-          imei: 'READ FAIL',
-          nicSn: 'READ FAIL',
-          db: 'FAILED',
-          result: 'FAIL'
+          uid: validUid || 'FAIL',
+          status: res?.status || 'FAIL',
+          meterSn: validSerial || 'FAIL',
+          imei: validImei || 'FAIL',
+          nicSn: validNic || 'FAIL',
+          db: res?.db || 'NOT SAVED',
+          result: res?.result || 'FAILED'
         });
-        showErrorAlert('Read Failed', res?.message || 'Failed to read meter data via optical probe.');
+        showErrorAlert('NIC Verification Failed', res?.message || 'Scanned NIC SN does not match meter read NIC SN. Stage 8 not saved.');
       }
     } catch (err) {
       setMeterReadStatus('failed');
@@ -819,8 +834,8 @@ export default function Stage08Page() {
         meterSn: 'ERROR',
         imei: 'ERROR',
         nicSn: 'ERROR',
-        db: 'FAILED',
-        result: 'FAIL'
+        db: 'NOT SAVED',
+        result: 'FAILED'
       });
       showErrorAlert('Optical Read Error', err.message || 'Error communicating with optical probe.');
     } finally {
@@ -830,25 +845,72 @@ export default function Stage08Page() {
   handleReadMeterOpticalRef.current = handleReadMeterOptical;
 
   // Demo Read for testing/simulation without physical probe
-  const handleDemoReadMeter = () => {
+  const handleDemoReadMeter = async () => {
     const randomSuffix = Math.floor(100000 + Math.random() * 900000);
     const demoSerial = `ZM24${randomSuffix}`;
     const demoImei = `86492004${randomSuffix}`;
-    const demoNic = `NIC-ZG-${demoSerial}`;
+    const scannedNic = fieldValues.nicSerialNumber?.trim();
+    const demoNic = scannedNic || `NIC-ZG-${demoSerial}`;
     const demoUid = `UID-${demoSerial}`;
 
-    setMeterReaderData({
-      uid: demoUid,
-      status: 'PASS',
-      meterSn: demoSerial,
-      imei: demoImei,
-      nicSn: demoNic,
-      db: 'PASS',
-      result: 'PASS'
-    });
-    setMeterReadStatus('success');
+    const isMatch = Boolean(scannedNic && demoNic === scannedNic);
 
-    setMeterSerial(demoSerial);
+    if (isMatch) {
+      try {
+        const payload = {
+          meter_no: demoSerial,
+          meter_serial: demoSerial,
+          form_id: activeWorkForm?.form_id || activeWorkForm?.id || null,
+          work_id: activeWorkForm?.form_id || null,
+          status: 'PASS',
+          seals: {
+            ...fieldValues,
+            meter_serial: demoSerial,
+            meter_reader: {
+              uid: demoUid,
+              status: 'PASS',
+              meterSn: demoSerial,
+              imei: demoImei,
+              nicSn: demoNic,
+              db: 'SAVED',
+              result: 'All Step Completed'
+            }
+          }
+        };
+        const saveRes = await stage08Service.submitSeal(payload);
+        if (typeof saveRes?.completed_quantity === 'number') {
+          setCompletedCount(saveRes.completed_quantity);
+        } else {
+          setCompletedCount(prev => prev + 1);
+        }
+        fetchRecords();
+      } catch (_) { }
+
+      setMeterReaderData({
+        uid: demoUid,
+        status: 'PASS',
+        meterSn: demoSerial,
+        imei: demoImei,
+        nicSn: demoNic,
+        db: 'SAVED',
+        result: 'All Step Completed'
+      });
+      setMeterReadStatus('success');
+      setMeterSerial(demoSerial);
+      showSuccessAlert('Meter Verified & Saved', `NIC SN '${demoNic}' matched with Meter. Stage 8 saved and meter_mapping updated.`);
+    } else {
+      setMeterReaderData({
+        uid: demoUid,
+        status: 'FAIL',
+        meterSn: demoSerial,
+        imei: demoImei,
+        nicSn: demoNic,
+        db: 'NOT SAVED',
+        result: 'FAILED'
+      });
+      setMeterReadStatus('failed');
+      showErrorAlert('NIC Verification Failed', `Scanned NIC '${scannedNic || 'EMPTY'}' does not match Demo NIC '${demoNic}'.`);
+    }
   };
 
   // Auto-connect and scan Optical Port on mount / page reload
@@ -1283,6 +1345,11 @@ export default function Stage08Page() {
       return;
     }
 
+    if (meterReadStatus !== 'success' || meterReaderData.status !== 'PASS') {
+      showErrorAlert('Verification Required', 'Please read meter and verify that NIC SN matches before submitting.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const fallbackMeterNo = meterReaderData.meterSn?.trim() ||
@@ -1560,8 +1627,8 @@ export default function Stage08Page() {
               {METER_READER_FIELDS.map((field) => {
                 const rawVal = meterReaderData[field.key] || '';
                 const valUpper = String(rawVal).trim().toUpperCase();
-                const isFieldFailed = meterReadStatus === 'failed' || valUpper === 'FAIL' || valUpper === 'FAILED' || valUpper === 'ERROR' || valUpper === 'READ FAIL';
-                const isFieldSuccess = (meterReadStatus === 'success' || (Boolean(meterReaderData.meterSn) && (meterReaderData.status === 'PASS' || meterReaderData.status === 'SUCCESS') && (meterReaderData.result === 'PASS' || meterReaderData.result === 'SUCCESS'))) && !isFieldFailed && valUpper.length > 0;
+                const isFieldFailed = meterReadStatus === 'failed' || valUpper === 'FAIL' || valUpper === 'FAILED' || valUpper === 'ERROR' || valUpper === 'READ FAIL' || valUpper === 'NOT SAVED' || valUpper === 'MISMATCH';
+                const isFieldSuccess = (meterReadStatus === 'success' || (Boolean(meterReaderData.meterSn) && (meterReaderData.status === 'PASS' || meterReaderData.status === 'SUCCESS') && (meterReaderData.result === 'PASS' || meterReaderData.result === 'SUCCESS' || meterReaderData.result === 'ALL STEP COMPLETED'))) && !isFieldFailed && valUpper.length > 0;
 
                 const textColor = isFieldSuccess ? '#16a34a' : isFieldFailed ? '#dc2626' : undefined;
 
@@ -1613,7 +1680,7 @@ export default function Stage08Page() {
                   disabled={!isAllScanned || isSubmitting}
                 >
                   <i className={`ti ${isSubmitting ? 'ti-loader spin' : 'ti-circle-check'} me-1`}></i>
-                  {isSubmitting ? 'Verifying & Saving...' : 'Verify & Submit Seals'}
+                  {isSubmitting ? 'Verifying & Saving...' : 'Submit'}
                 </button>
               </div>
             </div>

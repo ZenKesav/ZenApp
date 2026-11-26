@@ -12,7 +12,7 @@ router.get('/records', optionalAuth, Stage08Controller.getRecords);
 router.get('/optical-status', optionalAuth, Stage09Controller.checkOpticalCable);
 router.post('/optical-connect', optionalAuth, Stage09Controller.connectOpticalCable);
 router.post('/optical-disconnect', optionalAuth, Stage09Controller.disconnectOpticalCable);
-router.post('/read-meter', optionalAuth, Stage09Controller.readMeter);
+router.post('/read-meter', optionalAuth, Stage08Controller.readMeter);
 router.get('/:meterNo', optionalAuth, Stage08Controller.getStatus);
 
 module.exports = router;
