@@ -302,15 +302,29 @@ export default function Stage08Page() {
   // ==========================================
   // Optical Port State & Serial Configuration
   // ==========================================
-  const [opticalStatus, setOpticalStatus] = useState({
-    connected: false,
-    port: null,
-    baudRate: 9600,
-    ports: [],
-    friendlyName: null,
-    source: 'client_webserial',
-    tunnelId: null,
-    checking: false
+  const [opticalStatus, setOpticalStatus] = useState(() => {
+    let wasConnected = false;
+    let manualDisconnect = false;
+    let lastPort = null;
+    let lastSource = 'server';
+    try {
+      wasConnected = localStorage.getItem('zenmeter_optical_was_connected') === 'true';
+      manualDisconnect = localStorage.getItem('zenmeter_optical_manual_disconnect') === 'true';
+      lastPort = localStorage.getItem('zenmeter_optical_last_port');
+      lastSource = localStorage.getItem('zenmeter_optical_source') || 'server';
+      if (lastPort && isDummyPortName(lastPort)) lastPort = null;
+    } catch (_) { }
+    const shouldAutoConnect = wasConnected && !manualDisconnect;
+    return {
+      connected: false,
+      port: lastPort || null,
+      baudRate: 9600,
+      ports: [],
+      friendlyName: lastPort || null,
+      source: lastSource,
+      tunnelId: null,
+      checking: shouldAutoConnect
+    };
   });
   const [availableOpticalPorts, setAvailableOpticalPorts] = useState([]);
   const [selectedOpticalPort, setSelectedOpticalPort] = useState(() => {
@@ -322,12 +336,29 @@ export default function Stage08Page() {
     }
   });
   const [pairedPorts, setPairedPorts] = useState([]);
-  const [selectedPortId, setSelectedPortId] = useState('');
+  const [selectedPortId, setSelectedPortId] = useState(() => {
+    try {
+      const p = localStorage.getItem('zenmeter_optical_last_port') || '';
+      const src = localStorage.getItem('zenmeter_optical_source') || 'server';
+      if (p && !isDummyPortName(p)) {
+        return src === 'server' ? `server_${p}` : '';
+      }
+    } catch (_) { }
+    return '';
+  });
   const [showUsbSettings, setShowUsbSettings] = useState(false);
   const [isReadingOptical, setIsReadingOptical] = useState(false);
   const [isServerMachine, setIsServerMachine] = useState(true);
 
-  const manualDisconnectedRef = useRef(false);
+  const manualDisconnectedRef = useRef(
+    (() => {
+      try {
+        return localStorage.getItem('zenmeter_optical_manual_disconnect') === 'true';
+      } catch (_) {
+        return false;
+      }
+    })()
+  );
   const opticalStatusRef = useRef(opticalStatus);
   opticalStatusRef.current = opticalStatus;
   const selectedOpticalPortRef = useRef(selectedOpticalPort);
@@ -396,12 +427,16 @@ export default function Stage08Page() {
   // Keep selectedPortId in sync with available options
   useEffect(() => {
     if (opticalStatus.connected) return;
-    if (opticalPortOptions.length > 0 && !selectedPortId) {
-      const availableOpt = opticalPortOptions.find(o => !o.isTaken) || opticalPortOptions[0];
-      setSelectedPortId(availableOpt.id);
-      setSelectedOpticalPort(availableOpt.value);
+    if (opticalPortOptions.length > 0) {
+      if (!selectedPortId) {
+        const savedPort = selectedOpticalPort;
+        const matched = savedPort && opticalPortOptions.find(o => o.value && o.value.toLowerCase() === savedPort.toLowerCase());
+        const availableOpt = matched || opticalPortOptions.find(o => !o.isTaken) || opticalPortOptions[0];
+        setSelectedPortId(availableOpt.id);
+        setSelectedOpticalPort(availableOpt.value);
+      }
     }
-  }, [opticalPortOptions, selectedPortId, opticalStatus.connected]);
+  }, [opticalPortOptions, selectedPortId, opticalStatus.connected, selectedOpticalPort]);
 
   // Check Optical Port connection status and scan available hardware ports
   const checkOpticalCable = async (isExplicitCheck = false) => {
@@ -417,7 +452,8 @@ export default function Stage08Page() {
       const devId = webSerialService.deviceId;
       const res = await stage08Service.getOpticalStatus({
         deviceId: devId,
-        tunnelId: opticalStatusRef.current?.tunnelId || ''
+        tunnelId: opticalStatusRef.current?.tunnelId || '',
+        allow_server_port: 'true'
       });
 
       const isServer = res?.isServerMachine ?? isServerMachine;
@@ -430,17 +466,36 @@ export default function Stage08Page() {
           ? res.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
           : [];
         setAvailableOpticalPorts(detectedPorts);
-        setOpticalStatus(prev => {
-          const stillConnected = Boolean(prev.connected && detectedPorts.some(p => p.path === prev.port));
-          return {
-            ...prev,
-            connected: stillConnected,
-            ports: detectedPorts,
-            checking: false
-          };
-        });
 
-        if (detectedPorts.length > 0 && (!selectedOpticalPort || isDummyPortName(selectedOpticalPort))) {
+        const isBackendConnected = Boolean(res && res.connected && res.port);
+        const activePort = isBackendConnected ? res.port : (opticalStatusRef.current?.port || selectedOpticalPortRef.current);
+        const stillConnected = isBackendConnected || Boolean(opticalStatusRef.current?.connected && detectedPorts.some(p => p.path === activePort));
+
+        const eff = getEffectiveSerialConfig(usbSerialConfig);
+        const summary = formatSerialSummary(usbSerialConfig);
+
+        setOpticalStatus(prev => ({
+          ...prev,
+          connected: stillConnected,
+          port: stillConnected ? activePort : prev.port,
+          friendlyName: stillConnected
+            ? (res?.friendlyName || `${activePort} (${summary})`)
+            : prev.friendlyName,
+          source: 'server',
+          ports: detectedPorts,
+          checking: false
+        }));
+
+        if (stillConnected && activePort) {
+          setSelectedOpticalPort(activePort);
+          setSelectedPortId(`server_${activePort}`);
+          try {
+            localStorage.setItem('zenmeter_optical_was_connected', 'true');
+            localStorage.setItem('zenmeter_optical_last_port', activePort);
+            localStorage.setItem('zenmeter_optical_source', 'server');
+            localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
+          } catch (_) { }
+        } else if (detectedPorts.length > 0 && (!selectedOpticalPort || isDummyPortName(selectedOpticalPort))) {
           let savedPort = null;
           try {
             savedPort = localStorage.getItem('zenmeter_optical_last_port');
@@ -518,11 +573,18 @@ export default function Stage08Page() {
         } catch (_) { }
 
         const summary = formatSerialSummary(usbSerialConfig);
+        const detected = (availableOpticalPorts && availableOpticalPorts.length > 0)
+          ? availableOpticalPorts
+          : ((res && Array.isArray(res.ports)) ? res.ports.filter(p => !isDummyPortName(p.friendlyName || p.path)) : []);
+        if (detected.length > 0 && availableOpticalPorts.length === 0) {
+          setAvailableOpticalPorts(detected);
+        }
+
         setOpticalStatus({
           connected: true,
           port: res.port || portPath,
           baudRate: eff.baudRate,
-          ports: availableOpticalPorts.length > 0 ? availableOpticalPorts : (res.ports || []),
+          ports: detected,
           friendlyName: `${res.friendlyName || res.port || portPath} (${summary})`,
           source: 'server',
           tunnelId: null,
@@ -773,10 +835,267 @@ export default function Stage08Page() {
     }
   };
 
-  // Auto-check port on mount
+  // Auto-connect and scan Optical Port on mount / page reload
+  const initOpticalPort = async (checkMounted = () => true) => {
+    let wasOpticalConnected = false;
+    let opticalManualDisconnect = false;
+    let lastOpticalPort = null;
+    let lastOpticalSource = 'server';
+    try {
+      wasOpticalConnected = localStorage.getItem('zenmeter_optical_was_connected') === 'true';
+      opticalManualDisconnect = localStorage.getItem('zenmeter_optical_manual_disconnect') === 'true';
+      lastOpticalPort = localStorage.getItem('zenmeter_optical_last_port');
+      lastOpticalSource = localStorage.getItem('zenmeter_optical_source') || 'server';
+      if (lastOpticalPort && isDummyPortName(lastOpticalPort)) {
+        lastOpticalPort = null;
+      }
+    } catch (_) { }
+
+    manualDisconnectedRef.current = opticalManualDisconnect;
+
+    // 1. Scan paired Web Serial ports
+    const pairedList = await refreshPairedPorts();
+    if (!checkMounted()) return;
+
+    // 2. Query server status
+    let detectedServerPorts = [];
+    let isServer = true;
+    let optStatusRes = null;
+    try {
+      const devId = webSerialService.deviceId;
+      optStatusRes = await stage08Service.getOpticalStatus({
+        deviceId: devId,
+        allow_server_port: 'true'
+      });
+      if (optStatusRes?.isServerMachine !== undefined) {
+        isServer = optStatusRes.isServerMachine;
+        if (checkMounted()) setIsServerMachine(optStatusRes.isServerMachine);
+      }
+      detectedServerPorts = (optStatusRes && Array.isArray(optStatusRes.ports))
+        ? optStatusRes.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
+        : [];
+      if (checkMounted() && detectedServerPorts.length > 0) {
+        setAvailableOpticalPorts(detectedServerPorts);
+      }
+    } catch (e) {
+      console.warn('[Stage08] Port scan error on mount:', e.message);
+    }
+
+    if (!checkMounted()) return;
+
+    const eff = getEffectiveSerialConfig(usbSerialConfig);
+    const summary = formatSerialSummary(usbSerialConfig);
+
+    // 3. Check if backend already has active Optical connection
+    const isBackendOpticalOpen = Boolean(optStatusRes && optStatusRes.connected && optStatusRes.port);
+    const targetOptKey = lastOpticalPort ? extractPortKey(lastOpticalPort).toLowerCase() : '';
+    const optIsPhysicallyPresent = Boolean(
+      targetOptKey &&
+      detectedServerPorts.some(p =>
+        extractPortKey(p.path).toLowerCase() === targetOptKey ||
+        extractPortKey(p.friendlyName || '').toLowerCase() === targetOptKey
+      )
+    );
+    const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || Boolean(lastOpticalPort));
+
+    if (isBackendOpticalOpen && checkMounted()) {
+      // Backend already has port connected -> restore connection in frontend state
+      const activePort = optStatusRes.port ? (extractPortKey(optStatusRes.port) || optStatusRes.port) : (lastOpticalPort || 'COM3');
+      setOpticalStatus({
+        connected: true,
+        port: activePort,
+        friendlyName: optStatusRes.friendlyName || `${activePort} (${summary})`,
+        baudRate: optStatusRes.baudRate || eff.baudRate || 9600,
+        ports: detectedServerPorts.length > 0 ? detectedServerPorts : (optStatusRes.ports || []),
+        source: 'server',
+        tunnelId: null,
+        checking: false
+      });
+      setSelectedOpticalPort(activePort);
+      setSelectedPortId(`server_${activePort}`);
+      try {
+        localStorage.setItem('zenmeter_optical_was_connected', 'true');
+        localStorage.setItem('zenmeter_optical_last_port', activePort);
+        localStorage.setItem('zenmeter_optical_source', 'server');
+        localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
+      } catch (_) { }
+      return;
+    }
+
+    // 4. Auto-reconnect if it was previously connected and not manually disconnected
+    if (shouldConnectOptical && checkMounted()) {
+      // Option A: If previously connected via WebSerial, try reconnecting paired port
+      if (lastOpticalSource === 'client_webserial' && webSerialService.hasNativeSerial() && pairedList.length > 0) {
+        const freePort = pairedList.find(p => !p.port.readable || webSerialService.port === p.port) || pairedList[0];
+        if (freePort && freePort.port) {
+          try {
+            const res = await webSerialService.connectPort(freePort.port, currentOperatorId, eff);
+            if (res && res.success && checkMounted()) {
+              const refreshed = await refreshPairedPorts();
+              const newIdx = (refreshed || []).findIndex(p => p.port === webSerialService.port);
+              setSelectedPortId(newIdx >= 0 ? `paired_${newIdx}` : 'paired_0');
+              setSelectedOpticalPort(res.portName);
+              setOpticalStatus({
+                connected: true,
+                port: res.portName,
+                friendlyName: `${res.portName} (${summary})`,
+                baudRate: eff.baudRate,
+                ports: detectedServerPorts.length > 0 ? detectedServerPorts : [{ path: res.tunnelId, friendlyName: `${res.portName}` }],
+                source: 'client_webserial',
+                tunnelId: res.tunnelId,
+                deviceId: webSerialService.deviceId,
+                checking: false
+              });
+              try {
+                localStorage.setItem('zenmeter_optical_was_connected', 'true');
+                localStorage.setItem('zenmeter_optical_last_port', res.portName);
+                localStorage.setItem('zenmeter_optical_source', 'client_webserial');
+                localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
+              } catch (_) { }
+              return;
+            }
+          } catch (e) {
+            console.warn('[Stage08] WebSerial auto-reconnect failed, falling back to server port:', e.message);
+          }
+        }
+      }
+
+      // Option B: Reconnect server COM port
+      const targetServerPort = (lastOpticalPort && optIsPhysicallyPresent)
+        ? lastOpticalPort
+        : (detectedServerPorts.length > 0 ? detectedServerPorts[0].path : null);
+
+      if (targetServerPort && checkMounted()) {
+        const success = await handleConnectServerPort(targetServerPort, true);
+        if (success && checkMounted()) return;
+      }
+
+      // Option C: If server port connect failed but WebSerial is available, try paired port
+      if (webSerialService.hasNativeSerial() && pairedList.length > 0 && checkMounted()) {
+        const freePort = pairedList.find(p => !p.port.readable || webSerialService.port === p.port);
+        if (freePort && freePort.port) {
+          try {
+            const res = await webSerialService.connectPort(freePort.port, currentOperatorId, eff);
+            if (res && res.success && checkMounted()) {
+              const refreshed = await refreshPairedPorts();
+              const newIdx = (refreshed || []).findIndex(p => p.port === webSerialService.port);
+              setSelectedPortId(newIdx >= 0 ? `paired_${newIdx}` : 'paired_0');
+              setSelectedOpticalPort(res.portName);
+              setOpticalStatus({
+                connected: true,
+                port: res.portName,
+                friendlyName: `${res.portName} (${summary})`,
+                baudRate: eff.baudRate,
+                ports: detectedServerPorts.length > 0 ? detectedServerPorts : [{ path: res.tunnelId, friendlyName: `${res.portName}` }],
+                source: 'client_webserial',
+                tunnelId: res.tunnelId,
+                deviceId: webSerialService.deviceId,
+                checking: false
+              });
+              try {
+                localStorage.setItem('zenmeter_optical_was_connected', 'true');
+                localStorage.setItem('zenmeter_optical_last_port', res.portName);
+                localStorage.setItem('zenmeter_optical_source', 'client_webserial');
+                localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
+              } catch (_) { }
+              return;
+            }
+          } catch (_) { }
+        }
+      }
+    }
+
+    if (!checkMounted()) return;
+
+    // Fallback: not connected, but select the default port so operator can connect with 1 click
+    setOpticalStatus(prev => ({
+      ...prev,
+      connected: false,
+      ports: detectedServerPorts,
+      checking: false
+    }));
+
+    if (detectedServerPorts.length > 0) {
+      const savedPort = lastOpticalPort && !isDummyPortName(lastOpticalPort) ? lastOpticalPort : null;
+      const matchedPort = savedPort && detectedServerPorts.find(p => p.path && p.path.toLowerCase() === savedPort.toLowerCase());
+      const targetPort = matchedPort ? matchedPort.path : detectedServerPorts[0].path;
+      if (targetPort) {
+        setSelectedPortId(`server_${targetPort}`);
+        setSelectedOpticalPort(targetPort);
+      }
+    } else if (pairedList.length > 0) {
+      setSelectedPortId('paired_0');
+      setSelectedOpticalPort(pairedList[0].friendlyName);
+    }
+  };
+
+  // Hardware listeners & auto-connect on mount / page reload
   useEffect(() => {
-    checkOpticalCable(false);
-    refreshPairedPorts();
+    let isMounted = true;
+
+    // WebSerial hardware plug/unplug listeners
+    const removeOpticalListeners = webSerialService.setupDeviceListeners?.(
+      async () => {
+        if (!isMounted) return;
+        await refreshPairedPorts();
+      },
+      async () => {
+        if (!isMounted) return;
+        if (opticalStatusRef.current?.connected && opticalStatusRef.current?.source === 'client_webserial') {
+          const still = await webSerialService.checkPortStillConnected();
+          if (!still) {
+            handleHardwareDisconnection('USB cable physically unplugged from laptop.', false);
+          }
+        }
+      }
+    );
+
+    // Initial scan and auto-reconnect on mount / page reload
+    initOpticalPort(() => isMounted);
+
+    // Periodic check to keep hardware status fresh
+    const timer = setInterval(async () => {
+      if (!isMounted) return;
+      const currentStatus = opticalStatusRef.current;
+
+      // Case A: WebSerial connected -> verify device still present
+      if (currentStatus.connected && currentStatus.source === 'client_webserial' && webSerialService.port) {
+        const isStill = await webSerialService.checkPortStillConnected();
+        if (!isStill) {
+          await handleHardwareDisconnection('USB cable physically unplugged.', false);
+        }
+      }
+
+      // Case B: Server COM port check
+      try {
+        const res = await stage08Service.getOpticalStatus({ allow_server_port: 'true' });
+        if (!isMounted) return;
+        const currentPorts = (res && Array.isArray(res.ports))
+          ? res.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
+          : [];
+        setAvailableOpticalPorts(currentPorts);
+
+        if (currentStatus.connected && currentStatus.source === 'server') {
+          const connectedPath = (currentStatus.port || selectedOpticalPortRef.current || '').toLowerCase();
+          const cleanKey = extractPortKey(connectedPath).toLowerCase();
+          const stillPresent = currentPorts.some(p => {
+            const pPath = (p.path || '').toLowerCase();
+            const pKey = extractPortKey(pPath).toLowerCase();
+            const fKey = extractPortKey(p.friendlyName || '').toLowerCase();
+            return pPath === connectedPath || (cleanKey && (pKey === cleanKey || fKey === cleanKey));
+          });
+          if (!stillPresent && !res?.connected) {
+            await handleHardwareDisconnection('Optical COM port physically unplugged from computer.', false);
+          }
+        }
+      } catch (_) { }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+      removeOpticalListeners?.();
+    };
   }, []);
 
   // 1. Load active assigned work form for Stage 8
