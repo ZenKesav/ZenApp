@@ -494,11 +494,10 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     }
   };
 
-  // Duplicate IMEI & Manual Edit State
+  // Duplicate IMEI & Print State
   const [dbDuplicates, setDbDuplicates] = useState([]);
-  const [editingChannelId, setEditingChannelId] = useState(null);
-  const [editFormData, setEditFormData] = useState({ imei: '', hwv: 'v1.2', fwv: 'v2.0', sig: '-65dBm', comms_technology: '12' });
   const [printedChannels, setPrintedChannels] = useState({});
+  const [isSimulatingDemo, setIsSimulatingDemo] = useState(false);
 
   // USB Serial Hardware Connection State
   const currentOperatorId = user?.employee_id || user?.id || 'OPERATOR-04';
@@ -592,27 +591,89 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     return () => unsub();
   }, [usbConnected, selectedPort, laserConnected, selectedLaserPort, activePortLocks]);
 
+  // Auto-restore previously connected hardware ports on mount / page reload
+  useEffect(() => {
+    let isMounted = true;
+    const restoreStage4HardwarePorts = async () => {
+      // 1. Restore NIC Receive Port if it was connected before reload
+      try {
+        const jigRestore = await unifiedHardwarePortManager.restorePortOnMount({
+          role: 'jig',
+          stageId: 4,
+          stageName: 'Stage 4',
+          portType: 'NIC Receive Port',
+          config: jigSerialConfig,
+          operatorId: currentOperatorId
+        });
+        if (jigRestore && isMounted) {
+          setUsbConnected(true);
+          setUsbDeviceName(jigRestore.portName);
+          setSelectedPort(jigRestore.portName);
+          setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
+        }
+      } catch (e) {
+        console.warn('[Stage4] NIC Receive Port auto-restore note:', e.message);
+      }
+
+      // 2. Restore Laser Port if it was connected before reload (ensuring different port from NIC)
+      try {
+        const lastJig = localStorage.getItem('zenmeter_jig_last_port');
+        const lastLaser = localStorage.getItem('zenmeter_laser_last_port');
+        const isSamePort = lastJig && lastLaser && extractPortIdentifier(lastJig) === extractPortIdentifier(lastLaser);
+        if (!isSamePort) {
+          const laserRestore = await unifiedHardwarePortManager.restorePortOnMount({
+            role: 'laser',
+            stageId: 4,
+            stageName: 'Stage 4',
+            portType: 'Laser Port',
+            config: laserSerialConfig,
+            operatorId: currentOperatorId
+          });
+          if (laserRestore && isMounted) {
+            setLaserConnected(true);
+            setLaserDeviceName(laserRestore.portName);
+            setSelectedLaserPort(laserRestore.portName);
+          }
+        }
+      } catch (e) {
+        console.warn('[Stage4] Laser Port auto-restore note:', e.message);
+      }
+
+      if (isMounted) {
+        await refreshHardwarePortOptions();
+      }
+    };
+
+    restoreStage4HardwarePorts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (usbConnected) return;
-    const valid = jigPortOptions.filter(o => !o.isTaken);
+    const activeLaser = laserConnected ? extractPortIdentifier(selectedLaserPort) : null;
+    const valid = jigPortOptions.filter(o => !o.isTaken && (!activeLaser || extractPortIdentifier(o.value) !== activeLaser));
     const matches = valid.some(o => o.value === selectedPort);
     if (!matches && valid.length > 0) {
       setSelectedPort(valid[0].value);
-    } else if (valid.length === 0) {
-      setSelectedPort('');
+    } else if (valid.length === 0 || (activeLaser && extractPortIdentifier(selectedPort) === activeLaser)) {
+      setSelectedPort(valid.length > 0 ? valid[0].value : '');
     }
-  }, [jigPortOptions, selectedPort, usbConnected]);
+  }, [jigPortOptions, selectedPort, usbConnected, laserConnected, selectedLaserPort]);
 
   useEffect(() => {
     if (laserConnected) return;
-    const valid = laserPortOptions.filter(o => !o.isTaken);
+    const activeJig = usbConnected ? extractPortIdentifier(selectedPort) : null;
+    const valid = laserPortOptions.filter(o => !o.isTaken && (!activeJig || extractPortIdentifier(o.value) !== activeJig));
     const matches = valid.some(o => o.value === selectedLaserPort);
     if (!matches && valid.length > 0) {
       setSelectedLaserPort(valid[0].value);
-    } else if (valid.length === 0) {
-      setSelectedLaserPort('');
+    } else if (valid.length === 0 || (activeJig && extractPortIdentifier(selectedLaserPort) === activeJig)) {
+      setSelectedLaserPort(valid.length > 0 ? valid[0].value : '');
     }
-  }, [laserPortOptions, selectedLaserPort, laserConnected]);
+  }, [laserPortOptions, selectedLaserPort, laserConnected, usbConnected, selectedPort]);
 
   const wsRef = useRef(null);
   const nonUsbPattern = /(bluetooth|blth|buds|airpods|incoming-port|rfcomm|debug-console)/i;
@@ -653,7 +714,8 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
         hwv: 'v1.2',
         fwv: 'v2.0',
         sig: sigLevels[idx] || '-65dBm',
-        nic_uuid: `NIC-ZM-${imei}`,
+        nic_sr_no: imei,
+        nic_uuid: imei,
         comms_technology: '12',
         isSavedToDb: true
       };
@@ -770,6 +832,11 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       showWarningAlert('No Port Selected', 'Please select a COM port to connect.');
       return;
     }
+    const cleanTarget = extractPortIdentifier(target);
+    if (laserConnected && selectedLaserPort && extractPortIdentifier(selectedLaserPort) === cleanTarget) {
+      showErrorAlert('Port Conflict', `Port ${cleanTarget} is already in use by Laser Port. Both ports cannot connect to the same COM port.`);
+      return;
+    }
     const lockCheck = hardwarePortLockService.checkLock(target, 4);
     if (lockCheck.isLocked) {
       showErrorAlert('Port Unavailable', lockCheck.message || 'This COM port is already in use by another stage.');
@@ -782,6 +849,11 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
         setUsbDeviceName(target);
         setSelectedPort(target);
         hardwarePortLockService.claimLock(target, { stageId: 4, stageName: 'Stage 4', portType: 'NIC Receive Port' });
+        try {
+          localStorage.setItem('zenmeter_jig_was_connected', 'true');
+          localStorage.setItem('zenmeter_jig_last_port', target);
+          localStorage.setItem('zenmeter_jig_manual_disconnect', 'false');
+        } catch (_) { }
         setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
         setShowReceiveSettings(false);
         return;
@@ -823,11 +895,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           connectedSuccessfully = true;
           connectedDisplayName = res.data.device || res.data.details?.friendlyName || target;
           hardwarePortLockService.claimLock(target, { stageId: 4, stageName: 'Stage 4', portType: 'NIC Receive Port' });
-          try {
-            localStorage.setItem('zenmeter_jig_was_connected', 'true');
-            localStorage.setItem('zenmeter_jig_last_port', target);
-            localStorage.setItem('zenmeter_jig_manual_disconnect', 'false');
-          } catch (_) { }
         } else {
           showErrorAlert('Connection Failed', res.message || res.data?.error?.message || 'Could not connect to selected COM port.');
           setUsbConnected(false);
@@ -839,6 +906,9 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       setUsbDeviceName(connectedDisplayName);
       setSelectedPort(connectedDisplayName);
       try {
+        localStorage.setItem('zenmeter_jig_was_connected', 'true');
+        localStorage.setItem('zenmeter_jig_last_port', connectedDisplayName);
+        localStorage.setItem('zenmeter_jig_manual_disconnect', 'false');
         localStorage.setItem('zenmeter_jig_port_stage4', connectedDisplayName);
       } catch (e) { }
       setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
@@ -865,7 +935,10 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       setUsbConnected(false);
       setUsbDeviceName('');
       try {
+        localStorage.setItem('zenmeter_jig_was_connected', 'false');
+        localStorage.setItem('zenmeter_jig_manual_disconnect', 'true');
         localStorage.removeItem('zenmeter_jig_port_stage4');
+        localStorage.removeItem('zenmeter_jig_last_port');
       } catch (e) { }
       await refreshHardwarePortOptions();
     } catch (err) {
@@ -897,6 +970,11 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       showWarningAlert('No Port Selected', 'Please select a Laser COM port to connect.');
       return;
     }
+    const cleanTarget = extractPortIdentifier(target);
+    if (usbConnected && selectedPort && extractPortIdentifier(selectedPort) === cleanTarget) {
+      showErrorAlert('Port Conflict', `Port ${cleanTarget} is already in use by NIC Receive Port. Both ports cannot connect to the same COM port.`);
+      return;
+    }
     const lockCheck = hardwarePortLockService.checkLock(target, 4);
     if (lockCheck.isLocked) {
       showErrorAlert('Port Unavailable', lockCheck.message || 'This COM port is already in use by another stage.');
@@ -909,6 +987,11 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
         setLaserDeviceName(target);
         setSelectedLaserPort(target);
         hardwarePortLockService.claimLock(target, { stageId: 4, stageName: 'Stage 4', portType: 'Laser Port' });
+        try {
+          localStorage.setItem('zenmeter_laser_was_connected', 'true');
+          localStorage.setItem('zenmeter_laser_last_port', target);
+          localStorage.setItem('zenmeter_laser_manual_disconnect', 'false');
+        } catch (_) { }
         setShowLaserSettings(false);
         return;
       }
@@ -928,6 +1011,9 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       setLaserDeviceName(finalName);
       setSelectedLaserPort(finalName);
       try {
+        localStorage.setItem('zenmeter_laser_was_connected', 'true');
+        localStorage.setItem('zenmeter_laser_last_port', finalName);
+        localStorage.setItem('zenmeter_laser_manual_disconnect', 'false');
         localStorage.setItem('zenmeter_laser_port_stage4', finalName);
       } catch (e) { }
       setShowLaserSettings(false);
@@ -950,7 +1036,10 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       setLaserConnected(false);
       setLaserDeviceName('');
       try {
+        localStorage.setItem('zenmeter_laser_was_connected', 'false');
+        localStorage.setItem('zenmeter_laser_manual_disconnect', 'true');
         localStorage.removeItem('zenmeter_laser_port_stage4');
+        localStorage.removeItem('zenmeter_laser_last_port');
       } catch (e) { }
       await refreshHardwarePortOptions();
     } catch (err) {
@@ -1242,11 +1331,12 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
         const savedCardsCount = res.saved_channels || 0;
         const returnedNicCards = res.nic_cards || [];
 
-        // Update local channels state with assigned nic_uuid for saved cards
+        // Update local channels state with assigned nic_sr_no for saved cards
         const updatedChannels = currentChs.map(c => {
           const match = returnedNicCards.find(n => n.channel === c.ch);
           if (match) {
-            return { ...c, nic_uuid: match.nic_uuid, isSavedToDb: true };
+            const srNo = String(match.nic_sr_no || match.nic_uuid || c.imei).replace(/^NIC-ZM-/i, '').trim();
+            return { ...c, nic_sr_no: srNo, nic_uuid: srNo, isSavedToDb: true };
           }
           return c;
         });
@@ -1279,10 +1369,18 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
   };
 
   // Start Hardware Test Protocol
-  const handleJigStart = async () => {
-    if (isDemoMode) {
+  const handleJigStart = async (forceDemo = false) => {
+    if (isDemoMode || forceDemo) {
+      setIsSimulatingDemo(true);
       setTestState('STARTING');
       setIsSavedToDb(false);
+      setCycleId(null);
+      setCycleUuid(null);
+      setSaveTimestamp(null);
+      setSavedCount(0);
+      setJigLogs([]);
+      setJigData(null);
+      setDbDuplicates([]);
       setPrintedChannels({});
 
       const now = new Date();
@@ -1303,6 +1401,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           setIsSavedToDb(true);
           setSavedCount(8);
           setTestState('DATA_RECEIVED');
+          setIsSimulatingDemo(false);
           freshDemo.logs.forEach(l => appendLog(l));
         }, 600);
       }, 500);
@@ -1310,6 +1409,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       return;
     }
 
+    setIsSimulatingDemo(false);
     if (!usbConnected) {
       showWarningAlert('USB Removed / Disconnected', 'Please plug in a USB cable / Type-C device before starting Jig test.');
       return;
@@ -1367,59 +1467,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     await autoSaveJigDataToDb(jigData);
   };
 
-  // Manual Card Edit Handlers
-  const handleStartEditCard = (c) => {
-    if (editingChannelId === c.ch) {
-      setEditingChannelId(null);
-    } else {
-      setEditingChannelId(c.ch);
-      setEditFormData({
-        imei: c.imei || '',
-        hwv: c.hwv || 'v1.2',
-        fwv: c.fwv || 'v2.0',
-        sig: c.sig || '-65dBm',
-        comms_technology: c.comms_technology || '12'
-      });
-    }
-  };
-
-  const handleUpdateChannelCard = (channelNo, andSaveDb = false) => {
-    const imeiVal = editFormData.imei.trim();
-    if (!imeiVal) {
-      showWarningAlert('IMEI Required', 'Please enter a valid IMEI number to update this channel.');
-      return;
-    }
-
-    const updatedChannels = activeChannels.map(c => {
-      if (c.ch === channelNo) {
-        return {
-          ...c,
-          st: 'PASS',
-          imei: imeiVal,
-          hwv: editFormData.hwv.trim() || 'v1.2',
-          fwv: editFormData.fwv.trim() || 'v2.0',
-          sig: editFormData.sig.trim() || '-65dBm',
-          comms_technology: editFormData.comms_technology.trim() || '12'
-        };
-      }
-      return c;
-    });
-
-    const updatedData = {
-      jig: jigData?.jig || 'JIG-001',
-      tc: jigData?.tc || 1,
-      ch: updatedChannels
-    };
-
-    setJigData(updatedData);
-    setEditingChannelId(null);
-    checkDbDuplicates(updatedChannels);
-
-    if (andSaveDb) {
-      autoSaveJigDataToDb(updatedData);
-    }
-  };
-
   // Export 8-Channel Jig Results to Excel (.csv format with UTF-8 BOM)
   const handleExportToExcel = () => {
     if (!jigData || !jigData.ch) {
@@ -1467,6 +1514,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   // Reset Test Console
   const handleResetJigConsole = () => {
+    setIsSimulatingDemo(false);
     if (isDemoMode) {
       setJigData(null);
       setJigLogs([]);
@@ -1476,7 +1524,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       setIsSavedToDb(false);
       setSavedCount(0);
       setDbDuplicates([]);
-      setEditingChannelId(null);
       setPrintedChannels({});
       setTestState('IDLE');
       showWarningAlert('Demo Console Reset', 'Stage 4 Demo test console reset to initial idle state.');
@@ -1490,7 +1537,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     setSaveTimestamp(null);
     setSavedCount(0);
     setDbDuplicates([]);
-    setEditingChannelId(null);
     setPrintedChannels({});
     setTestState(usbConnected ? 'USB_CONNECTED' : 'IDLE');
     showWarningAlert('Console Reset', '8-Channel Jig Console state reset to initial.');
@@ -2256,41 +2302,83 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           </div>
 
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            {/* Start Jig Test Button */}
+            {/* Demo Jig Test Button (Left side of Start Jig test) - Enabled when NIC Receive Port is connected */}
             <button
-              className={`btn btn-sm px-3.5 py-1.5 fw-bold shadow-sm d-inline-flex align-items-center text-nowrap ${isStartDisabled ? 'btn-secondary opacity-75' : 'btn-primary'
-                }`}
-              onClick={handleJigStart}
-              disabled={isStartDisabled}
-              title={isDemoMode ? "Simulate Full Jig Test Protocol & Telemetry" : "Send START to USB -> Receive Data -> Check Duplicates -> Save DB"}
+              type="button"
+              className={`btn btn-sm px-3.5 py-1.5 fw-bold shadow-sm d-inline-flex align-items-center text-nowrap ${
+                !usbConnected || testState === 'STARTING' || testState === 'SAVING'
+                  ? 'btn-outline-secondary opacity-50'
+                  : 'btn-outline-success'
+              }`}
+              onClick={() => handleJigStart(true)}
+              disabled={!usbConnected || testState === 'STARTING' || testState === 'SAVING'}
+              title={!usbConnected ? "Connect NIC Receive Port to enable Demo Jig test" : "Simulate 8-Channel Hardware Telemetry Protocol (Demo Mode)"}
             >
-              <i className={`ti ${testState === 'STARTING' || testState === 'SAVING' ? 'ti-loader spin' : 'ti-player-play'} me-1.5`}></i>
-              {testState === 'STARTING'
-                ? (isDemoMode ? 'Simulating Protocol...' : 'Communicating Protocol...')
-                : testState === 'SAVING'
-                  ? 'Saving to DB...'
-                  : (isDemoMode ? 'Start Demo Test' : 'Start Jig test')}
+              <i className={`ti ${testState === 'STARTING' && isSimulatingDemo ? 'ti-loader spin' : 'ti-device-desktop-analytics'} me-1.5`}></i>
+              <span>{testState === 'STARTING' && isSimulatingDemo ? 'Simulating...' : 'Demo Jig test'}</span>
             </button>
 
-            {/* Print Button */}
+            {/* Start Jig Test Button - Enabled when NIC Receive Port is connected */}
+            <button
+              className={`btn btn-sm px-3.5 py-1.5 fw-bold shadow-sm d-inline-flex align-items-center text-nowrap ${
+                !usbConnected || testState === 'STARTING' || testState === 'SAVING'
+                  ? 'btn-secondary opacity-50'
+                  : 'btn-primary'
+              }`}
+              onClick={() => handleJigStart(false)}
+              disabled={!usbConnected || testState === 'STARTING' || testState === 'SAVING'}
+              title={!usbConnected ? "Connect NIC Receive Port to enable Start Jig test" : "Send START to USB -> Receive Data -> Check Duplicates -> Save DB"}
+            >
+              <i className={`ti ${testState === 'STARTING' && !isSimulatingDemo ? 'ti-loader spin' : testState === 'SAVING' ? 'ti-loader spin' : 'ti-player-play'} me-1.5`}></i>
+              {testState === 'STARTING' && !isSimulatingDemo
+                ? 'Communicating Protocol...'
+                : testState === 'SAVING'
+                  ? 'Saving to DB...'
+                  : 'Start Jig test'}
+            </button>
+
+            {/* Print Button - Enabled when Laser Port is connected and test data exists */}
             <button
               type="button"
               onClick={handleOpenPrintModal}
-              disabled={!jigData || !jigData.ch}
-              className="btn btn-sm px-3.5 py-1.5 fw-bold shadow-2xs text-white d-inline-flex align-items-center"
+              disabled={!laserConnected || !jigData || !jigData.ch || jigData.ch.length === 0}
+              className={`btn btn-sm px-3.5 py-1.5 fw-bold shadow-2xs text-white d-inline-flex align-items-center ${
+                !laserConnected || !jigData || !jigData.ch || jigData.ch.length === 0 ? 'opacity-50' : ''
+              }`}
               style={{ backgroundColor: '#ff7043', borderColor: '#ff7043' }}
-              title="Print Channel JSON Data & Send to Printer API"
+              title={!laserConnected ? "Connect Laser Port to enable Print" : !jigData || !jigData.ch ? "Run a test to enable Print" : "Print Channel JSON Data & Send to Printer API"}
             >
               <i className="ti ti-printer me-1.5"></i> Print
             </button>
 
-            {/* Validate QR's Button */}
+            {/* Validate QR's Button - Enabled when test has been executed */}
             <button
               type="button"
-              onClick={() => setIsQrModalOpen(true)}
-              disabled={!jigData || !jigData.ch}
-              className="btn btn-sm btn-outline-primary px-3.5 py-1.5 fw-bold shadow-2xs d-inline-flex align-items-center"
-              title="Open QR Validation and Scanner Interface for tested NIC cards"
+              onClick={() => {
+                try {
+                  const cleanedChannels = activeChannels.map(c => ({
+                    ...c,
+                    nic_sr_no: String(c.nic_sr_no || c.nic_uuid || c.imei || '').replace(/^NIC-ZM-/i, '').trim(),
+                    imei: String(c.imei || '').trim()
+                  }));
+                  const stateToSave = {
+                    jigData,
+                    cycleUuid: cycleUuid || 'CYC-' + Date.now().toString().slice(-6),
+                    activeChannels: cleanedChannels,
+                    workId: activeWorkForm?.form_id || activeWorkForm?.work_id || 'WORK-STG4-001',
+                    batchNo: activeWorkForm?.batch_no || 'BATCH-2026-01'
+                  };
+                  sessionStorage.setItem('zenmeter_stage04_active_validation', JSON.stringify(stateToSave));
+                  navigate('/stages/4/validate-qr', { state: stateToSave });
+                } catch (e) {
+                  navigate('/stages/4/validate-qr');
+                }
+              }}
+              disabled={!jigData || !jigData.ch || jigData.ch.length === 0}
+              className={`btn btn-sm btn-outline-primary px-3.5 py-1.5 fw-bold shadow-2xs d-inline-flex align-items-center ${
+                !jigData || !jigData.ch || jigData.ch.length === 0 ? 'opacity-50' : ''
+              }`}
+              title={!jigData || !jigData.ch || jigData.ch.length === 0 ? "Run Demo Jig test or Start Jig test to enable Validate QR's" : "Open QR Validation and Scanner Interface for tested NIC cards"}
             >
               <i className="ti ti-qrcode me-1.5"></i> Validate QR's
             </button>
@@ -2386,10 +2474,6 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                         <i className="ti ti-alert-triangle fs-6"></i> {mismatchCount} Mismatch
                       </span>
                     )}
-                    <span className="text-muted text-xs d-none d-xl-inline-flex align-items-center gap-1 ms-1">
-                      <i className="ti ti-keyboard text-secondary"></i>
-                      <span>Scanner automatically advances to next channel upon valid match</span>
-                    </span>
                   </div>
 
                   <div className="d-flex align-items-center gap-2">
@@ -2757,11 +2841,10 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
   // Helper render for channel box
   function renderChannelBox(c) {
     const cls = getChannelClassification(c);
-    const isEditing = editingChannelId === c.ch;
 
     let cardBorderStyle = { border: '1px solid #e2e8f0', backgroundColor: '#ffffff' };
     let badgeClass = 'bg-secondary-subtle text-secondary border';
-    let badgeText = c.st || 'NCON';
+    let badgeText = c.st || '';
     let statusIcon = 'ti-power';
 
     if (c.st === 'TESTING') {
@@ -2771,7 +2854,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       statusIcon = 'ti-loader spin';
     } else if (cls.isDuplicate) {
       cardBorderStyle = { border: '2px solid #f59e0b', backgroundColor: '#ffffff', boxShadow: '0 0 8px rgba(245, 158, 11, 0.2)' };
-      const stClean = c.st === 'PASS' ? 'PASS' : c.st === 'CON' ? 'CON' : (c.st || 'NCON');
+      const stClean = c.st === 'PASS' ? 'PASS' : c.st === 'CON' ? 'CON' : (c.st || '');
       badgeClass = (stClean === 'PASS' || stClean === 'CON') ? 'bg-success text-white fw-bold' : 'bg-secondary-subtle text-secondary border';
       badgeText = stClean;
       statusIcon = (stClean === 'PASS' || stClean === 'CON') ? 'ti-check' : 'ti-power';
@@ -2800,167 +2883,74 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
               <span className="fw-bold text-dark" style={{ fontSize: '12px' }}>Channel {c.ch}</span>
             </div>
 
-            <div className="d-flex align-items-center gap-1">
+            {badgeText && badgeText !== 'NCON' && (
               <span className={`badge ${badgeClass} font-mono px-1.5 py-0.5`} style={{ fontSize: '10.5px' }}>
                 <i className={`ti ${statusIcon} me-1`}></i>
                 {badgeText}
               </span>
-              <button
-                type="button"
-                className={`btn btn-xs py-0.5 px-1.5 border-0 ${isEditing ? 'btn-secondary' : 'btn-outline-primary'}`}
-                onClick={() => handleStartEditCard(c)}
-                title="Edit Channel Data Manually"
-                style={{ lineHeight: 1 }}
-              >
-                <i className={`ti ${isEditing ? 'ti-x' : 'ti-pencil'}`} style={{ fontSize: '11px' }}></i>
-              </button>
-            </div>
+            )}
           </div>
 
           {/* Card Body */}
           <div className="card-body p-2 px-2.5 font-mono" style={{ fontSize: '11.5px' }}>
-            {isEditing ? (
-              /* Inline Edit Mode Form */
-              <div className="d-flex flex-column gap-1.5 bg-white p-2 rounded border shadow-2xs">
-                <div className="fw-bold text-primary border-bottom pb-1 mb-0.5 text-2xs d-flex justify-content-between align-items-center">
-                  <span><i className="ti ti-edit me-1"></i>Edit Ch {c.ch}</span>
-                  <span className="text-muted text-3xs">Manual Input</span>
-                </div>
-                <div>
-                  <label className="text-secondary text-3xs mb-0 fw-semibold">IMEI Number:</label>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm font-mono py-0.5 px-1.5 text-xs fw-bold"
-                    style={{ height: '28px', fontSize: '11px' }}
-                    value={editFormData.imei}
-                    onChange={(e) => setEditFormData({ ...editFormData, imei: e.target.value })}
-                    placeholder="Enter IMEI..."
-                  />
-                </div>
-                <div className="row g-1">
-                  <div className="col-6">
-                    <label className="text-secondary text-3xs mb-0">HWV:</label>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
-                      style={{ height: '26px', fontSize: '11px' }}
-                      value={editFormData.hwv}
-                      onChange={(e) => setEditFormData({ ...editFormData, hwv: e.target.value })}
-                    />
-                  </div>
-                  <div className="col-6">
-                    <label className="text-secondary text-3xs mb-0">FWV:</label>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
-                      style={{ height: '26px', fontSize: '11px' }}
-                      value={editFormData.fwv}
-                      onChange={(e) => setEditFormData({ ...editFormData, fwv: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="row g-1">
-                  <div className="col-6">
-                    <label className="text-secondary text-3xs mb-0">SIG:</label>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
-                      style={{ height: '26px', fontSize: '11px' }}
-                      value={editFormData.sig}
-                      onChange={(e) => setEditFormData({ ...editFormData, sig: e.target.value })}
-                    />
-                  </div>
-                  <div className="col-6">
-                    <label className="text-secondary text-3xs mb-0">Comms Tech:</label>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm font-mono py-0.5 px-1.5"
-                      style={{ height: '26px', fontSize: '11px' }}
-                      value={editFormData.comms_technology}
-                      onChange={(e) => setEditFormData({ ...editFormData, comms_technology: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="d-flex justify-content-end gap-1 mt-1 pt-1 border-top">
-                  <button
-                    type="button"
-                    className="btn btn-xs btn-primary fw-bold px-2 py-0.5"
-                    style={{ fontSize: '11px' }}
-                    onClick={() => handleUpdateChannelCard(c.ch, false)}
-                  >
-                    <i className="ti ti-check me-0.5"></i>Update
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-xs btn-success text-white fw-bold px-2 py-0.5"
-                    style={{ fontSize: '11px' }}
-                    onClick={() => handleUpdateChannelCard(c.ch, true)}
-                  >
-                    <i className="ti ti-database-import me-0.5"></i>Save DB
-                  </button>
-                </div>
+            {(c.nic_sr_no || c.nic_uuid) && (
+              <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+                <span className="text-secondary" style={{ fontSize: '11px' }}>nic_sr_no:</span>
+                <span className="fw-bold text-primary font-mono" style={{ fontSize: '11.5px' }}>
+                  {String(c.nic_sr_no || c.nic_uuid).replace(/^NIC-ZM-/i, '')}
+                </span>
               </div>
-            ) : (
-              /* Display Mode */
-              <>
-                {c.nic_uuid && (
-                  <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
-                    <span className="text-secondary" style={{ fontSize: '11px' }}>nic_uuid:</span>
-                    <span className="fw-bold text-primary font-mono" style={{ fontSize: '11.5px' }}>{c.nic_uuid}</span>
-                  </div>
-                )}
-                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
-                  <span className="text-secondary" style={{ fontSize: '11px' }}>imei:</span>
-                  <span className={`fw-bold font-mono ${cls.isDuplicate ? 'text-warning text-dark' : 'text-dark'}`} style={{ fontSize: '11.5px' }}>
-                    {c.imei || '-'}
-                  </span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
-                  <span className="text-secondary" style={{ fontSize: '11px' }}>hwv:</span>
-                  <span className="fw-bold text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.hwv || '-'}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
-                  <span className="text-secondary" style={{ fontSize: '11px' }}>fwv:</span>
-                  <span className="fw-bold text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.fwv || '-'}</span>
-                </div>
-
-                {/* Card Bottom: Sig, DB Status & QR-Print Status */}
-                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
-                  <span className="text-secondary" style={{ fontSize: '11px' }}>sig:</span>
-                  <span className={`fw-bold ${c.sig ? 'text-success' : 'text-muted'}`} style={{ fontSize: '11.5px' }}>{c.sig || '-'}</span>
-                </div>
-
-                <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
-                  <span className="text-secondary" style={{ fontSize: '11px' }}>DB:</span>
-                  {testState === 'SAVING' ? (
-                    <span className="text-primary fw-bold text-3xs d-inline-flex align-items-center gap-1">
-                      <i className="ti ti-loader spin"></i>Processing...
-                    </span>
-                  ) : cls.isDuplicate ? (
-                    <span className="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5" style={{ fontSize: '10px' }}>
-                      DUPLICATE
-                    </span>
-                  ) : isSaved ? (
-                    <span className="badge bg-success-subtle text-success border border-success px-1.5 py-0.5" style={{ fontSize: '10px' }}>
-                      <i className="ti ti-check me-0.5"></i>SAVED
-                    </span>
-                  ) : (
-                    <span className="text-muted" style={{ fontSize: '11px' }}>-</span>
-                  )}
-                </div>
-
-                <div className="d-flex justify-content-between align-items-center py-1">
-                  <span className="text-secondary" style={{ fontSize: '11px' }}>QR-Print:</span>
-                  {isPrinted ? (
-                    <span className="badge bg-success-subtle text-success border border-success px-1.5 py-0.5" style={{ fontSize: '10px' }}>
-                      Printed
-                    </span>
-                  ) : (
-                    <span className="text-muted" style={{ fontSize: '11px' }}>-</span>
-                  )}
-                </div>
-              </>
             )}
+            <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+              <span className="text-secondary" style={{ fontSize: '11px' }}>imei:</span>
+              <span className={`fw-bold font-mono ${cls.isDuplicate ? 'text-warning text-dark' : 'text-dark'}`} style={{ fontSize: '11.5px' }}>
+                {c.imei || '-'}
+              </span>
+            </div>
+            <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+              <span className="text-secondary" style={{ fontSize: '11px' }}>hwv:</span>
+              <span className="fw-bold text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.hwv || '-'}</span>
+            </div>
+            <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+              <span className="text-secondary" style={{ fontSize: '11px' }}>fwv:</span>
+              <span className="fw-bold text-dark font-mono" style={{ fontSize: '11.5px' }}>{c.fwv || '-'}</span>
+            </div>
+
+            {/* Card Bottom: Sig, DB Status & QR-Print Status */}
+            <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+              <span className="text-secondary" style={{ fontSize: '11px' }}>sig:</span>
+              <span className={`fw-bold ${c.sig ? 'text-success' : 'text-muted'}`} style={{ fontSize: '11.5px' }}>{c.sig || '-'}</span>
+            </div>
+
+            <div className="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle">
+              <span className="text-secondary" style={{ fontSize: '11px' }}>DB:</span>
+              {testState === 'SAVING' ? (
+                <span className="text-primary fw-bold text-3xs d-inline-flex align-items-center gap-1">
+                  <i className="ti ti-loader spin"></i>Processing...
+                </span>
+              ) : cls.isDuplicate ? (
+                <span className="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5" style={{ fontSize: '10px' }}>
+                  DUPLICATE
+                </span>
+              ) : isSaved ? (
+                <span className="badge bg-success-subtle text-success border border-success px-1.5 py-0.5" style={{ fontSize: '10px' }}>
+                  <i className="ti ti-check me-0.5"></i>SAVED
+                </span>
+              ) : (
+                <span className="text-muted" style={{ fontSize: '11px' }}>-</span>
+              )}
+            </div>
+
+            <div className="d-flex justify-content-between align-items-center py-1">
+              <span className="text-secondary" style={{ fontSize: '11px' }}>QR-Print:</span>
+              {isPrinted ? (
+                <span className="badge bg-success-subtle text-success border border-success px-1.5 py-0.5" style={{ fontSize: '10px' }}>
+                  Printed
+                </span>
+              ) : (
+                <span className="text-muted" style={{ fontSize: '11px' }}>-</span>
+              )}
+            </div>
           </div>
         </div>
       </div>

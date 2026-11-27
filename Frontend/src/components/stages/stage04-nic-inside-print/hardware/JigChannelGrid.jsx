@@ -42,7 +42,7 @@ export default function JigChannelGrid({
     return {
       border: '1px solid #e2e8f0',
       badge: 'bg-secondary-subtle text-secondary border',
-      text: c.st || 'NCON',
+      text: (c.st && c.st !== 'NCON') ? c.st : '',
       icon: 'ti-power'
     };
   };
@@ -70,10 +70,12 @@ export default function JigChannelGrid({
                     <i className="ti ti-cpu text-primary" style={{ fontSize: '13px' }}></i>
                     <span className="fw-bold text-dark" style={{ fontSize: '12px' }}>Channel {c.ch}</span>
                   </div>
-                  <span className={`badge ${style.badge} font-mono px-1.5 py-0.5`} style={{ fontSize: '10.5px' }}>
-                    <i className={`ti ${style.icon} me-1`}></i>
-                    {style.text}
-                  </span>
+                  {style.text && style.text !== 'NCON' && (
+                    <span className={`badge ${style.badge} font-mono px-1.5 py-0.5`} style={{ fontSize: '10.5px' }}>
+                      <i className={`ti ${style.icon} me-1`}></i>
+                      {style.text}
+                    </span>
+                  )}
                 </div>
 
                 <div className="card-body p-2 px-2.5 font-mono" style={{ fontSize: '11.5px' }}>

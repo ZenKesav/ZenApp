@@ -87,12 +87,14 @@ const Stage04Model = {
 
             seenBatchImeis.add(imeiVal);
             maxNum++;
-            const nicUuid = `ZMRDNIC${String(maxNum).padStart(4, '0')}`;
-            savedNicCards.push({ channel: c.ch, nic_uuid: nicUuid, imei: imeiVal });
-            return { ...c, st: 'PASS', nic_uuid: nicUuid, isDuplicate: false };
+            const nicSrNo = c.nic_sr_no
+              ? String(c.nic_sr_no).replace(/^NIC-ZM-/i, '').trim()
+              : (c.nic_uuid ? String(c.nic_uuid).replace(/^NIC-ZM-/i, '').trim() : (imeiVal || String(maxNum)));
+            savedNicCards.push({ channel: c.ch, nic_sr_no: nicSrNo, nic_uuid: nicSrNo, imei: imeiVal });
+            return { ...c, st: 'PASS', nic_sr_no: nicSrNo, nic_uuid: nicSrNo, isDuplicate: false };
           }
 
-          return { ...c, st: c.st === 'FAIL' ? 'FAIL' : 'NCON', nic_uuid: null };
+          return { ...c, st: c.st === 'FAIL' ? 'FAIL' : 'NCON', nic_sr_no: null, nic_uuid: null };
         });
 
         const totalChannels = rawChannels.length;
@@ -102,7 +104,9 @@ const Stage04Model = {
 
         // Step 5: Save each channel test directly into stage04_nic_print_records
         for (const c of updatedChannels) {
-          const nicUuid = c.nic_uuid || `CH${c.ch}_${cycleUuid}`;
+          const nicSrNo = c.nic_sr_no
+            ? String(c.nic_sr_no).replace(/^NIC-ZM-/i, '').trim()
+            : (c.nic_uuid ? String(c.nic_uuid).replace(/^NIC-ZM-/i, '').trim() : (c.imei ? String(c.imei).trim() : `CH${c.ch}_${cycleUuid}`));
           const imeiVal = c.imei ? String(c.imei).trim() : null;
           const status = c.st === 'PASS' ? 'PASS' : (c.st === 'DUPLICATE' ? 'FAIL' : 'FAIL');
 
@@ -118,7 +122,7 @@ const Stage04Model = {
               cycleUuid,
               c.ch || 1,
               jigId,
-              nicUuid,
+              nicSrNo,
               imeiVal,
               c.hwv || 'v1.2',
               c.fwv || 'v2.0',
@@ -181,11 +185,13 @@ const Stage04Model = {
           const isPass = c.st === 'PASS' || c.st === 'CON';
           if (isPass) {
             currentCounter++;
-            const nicUuid = `ZMRDNIC${String(currentCounter).padStart(4, '0')}`;
-            savedNicCards.push({ channel: c.ch, nic_uuid: nicUuid, imei: c.imei });
-            return { ...c, st: 'PASS', nic_uuid: nicUuid };
+            const nicSrNo = c.nic_sr_no
+              ? String(c.nic_sr_no).replace(/^NIC-ZM-/i, '').trim()
+              : (c.nic_uuid ? String(c.nic_uuid).replace(/^NIC-ZM-/i, '').trim() : (c.imei ? String(c.imei).trim() : String(currentCounter)));
+            savedNicCards.push({ channel: c.ch, nic_sr_no: nicSrNo, nic_uuid: nicSrNo, imei: c.imei });
+            return { ...c, st: 'PASS', nic_sr_no: nicSrNo, nic_uuid: nicSrNo };
           }
-          return { ...c, st: c.st === 'FAIL' ? 'FAIL' : 'NCON', nic_uuid: null };
+          return { ...c, st: c.st === 'FAIL' ? 'FAIL' : 'NCON', nic_sr_no: null, nic_uuid: null };
         });
 
         return {

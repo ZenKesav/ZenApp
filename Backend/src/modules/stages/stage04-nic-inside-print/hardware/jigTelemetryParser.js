@@ -48,6 +48,10 @@ class JigTelemetryParser {
       else if (stRaw === 'FAIL') status = 'FAIL';
       else if (stRaw === 'TESTING') status = 'TESTING';
 
+      const nicSr = found.nic_sr_no
+        ? String(found.nic_sr_no).replace(/^NIC-ZM-/i, '').trim()
+        : (found.nic_uuid ? String(found.nic_uuid).replace(/^NIC-ZM-/i, '').trim() : (found.imei ? String(found.imei).trim() : null));
+
       return {
         ch: chNo,
         st: status,
@@ -55,7 +59,8 @@ class JigTelemetryParser {
         hwv: found.hwv ? String(found.hwv).trim() : null,
         fwv: found.fwv ? String(found.fwv).trim() : null,
         sig: found.sig ? String(found.sig).trim() : null,
-        nic_uuid: found.nic_uuid || null
+        nic_sr_no: nicSr,
+        nic_uuid: nicSr
       };
     });
 
