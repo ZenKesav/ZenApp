@@ -5,6 +5,9 @@ import { stage08Service } from '../../../services/stages/stage08.service';
 import { showSuccessAlert, showErrorAlert, showConfirmAlert } from '../../../utils/swal';
 import Modal from '../../../components/common/Modal/Modal';
 import webSerialService from '../../../services/common/webSerialService';
+import hardwarePortLockService, { extractPortIdentifier } from '../../../services/common/hardwarePortLockService';
+import unifiedHardwarePortManager from '../../../services/common/unifiedHardwarePortManager';
+import HardwarePortModal from '../../../components/common/hardware/HardwarePortModal';
 import { STAGE_08_FIELDS, METER_READER_FIELDS } from './stage08.constants';
 
 const isDummyPortName = (name) => {
@@ -383,61 +386,44 @@ export default function Stage08Page() {
     });
   };
 
-  // Unified options for Optical Port combining Server detected ports and browser WebSerial ports
-  const opticalPortOptions = useMemo(() => {
-    const list = [];
-    const seen = new Set();
+  const [activePortLocks, setActivePortLocks] = useState(() => hardwarePortLockService.getStoredLocks());
 
-    (availableOpticalPorts || [])
-      .filter(p => !isDummyPortName(p.friendlyName || p.path))
-      .forEach(p => {
-        const pKey = extractPortKey(p.path);
-        seen.add(pKey);
-        seen.add(p.path.toUpperCase());
-        list.push({
-          id: `server_${p.path}`,
-          value: p.path,
-          type: 'server',
-          label: p.friendlyName || (p.path ? `USB Serial Port (${p.path})` : p.path),
-          isTaken: false,
-          takenMsg: ''
-        });
-      });
+  useEffect(() => {
+    setActivePortLocks(hardwarePortLockService.getStoredLocks());
+    return hardwarePortLockService.subscribe((locks) => {
+      setActivePortLocks({ ...locks });
+    });
+  }, []);
 
-    (pairedPorts || [])
-      .filter(p => !isDummyPortName(p.friendlyName))
-      .forEach((p, idx) => {
-        const pKey = extractPortKey(p.friendlyName);
-        if (list.length > 0 && (!pKey || seen.has(pKey) || p.friendlyName.toLowerCase() === 'usb serial port')) {
-          return;
-        }
-        if (pKey) seen.add(pKey);
-        const isTaken = Boolean(p.port && p.port.readable !== null && webSerialService?.port !== p.port);
-        list.push({
-          id: `paired_${idx}`,
-          value: p.friendlyName,
-          type: 'webserial',
-          portObj: p.port,
-          label: p.friendlyName,
-          isTaken,
-          takenMsg: isTaken ? ' (In use)' : ''
-        });
-      });
+  // Unified options for Optical Port using local Device Manager ports
+  const [opticalPortOptions, setOpticalPortOptions] = useState([]);
 
-    return list;
-  }, [availableOpticalPorts, pairedPorts]);
+  const refreshHardwarePortOptions = async () => {
+    try {
+      const list = await unifiedHardwarePortManager.getAvailablePorts('optical', 8, null, opticalStatus.connected ? opticalStatus.port : null);
+      setOpticalPortOptions(list);
+    } catch (_) { }
+  };
+
+  useEffect(() => {
+    refreshHardwarePortOptions();
+    const unsub = unifiedHardwarePortManager.setupHardwareListeners(() => {
+      refreshHardwarePortOptions();
+    });
+    return () => unsub();
+  }, [opticalStatus.connected, opticalStatus.port, activePortLocks]);
 
   // Keep selectedPortId in sync with available options
   useEffect(() => {
     if (opticalStatus.connected) return;
-    if (opticalPortOptions.length > 0) {
-      if (!selectedPortId) {
-        const savedPort = selectedOpticalPort;
-        const matched = savedPort && opticalPortOptions.find(o => o.value && o.value.toLowerCase() === savedPort.toLowerCase());
-        const availableOpt = matched || opticalPortOptions.find(o => !o.isTaken) || opticalPortOptions[0];
-        setSelectedPortId(availableOpt.id);
-        setSelectedOpticalPort(availableOpt.value);
-      }
+    const valid = opticalPortOptions.filter(o => !o.isTaken);
+    const currentMatches = valid.some(o => o.value === selectedOpticalPort);
+    if (!currentMatches && valid.length > 0) {
+      setSelectedOpticalPort(valid[0].value);
+      setSelectedPortId(valid[0].value);
+    } else if (valid.length === 0) {
+      setSelectedOpticalPort('');
+      setSelectedPortId('');
     }
   }, [opticalPortOptions, selectedPortId, opticalStatus.connected, selectedOpticalPort]);
 
@@ -455,8 +441,7 @@ export default function Stage08Page() {
       const devId = webSerialService.deviceId;
       const res = await stage08Service.getOpticalStatus({
         deviceId: devId,
-        tunnelId: opticalStatusRef.current?.tunnelId || '',
-        allow_server_port: 'true'
+        tunnelId: opticalStatusRef.current?.tunnelId || ''
       });
 
       const isServer = res?.isServerMachine ?? isServerMachine;
@@ -525,7 +510,8 @@ export default function Stage08Page() {
           setSelectedPortId('paired_0');
           setSelectedOpticalPort(localPaired[0].friendlyName);
         } else if (localPaired.length === 0 && (!selectedPortId || selectedPortId.startsWith('server_'))) {
-          setSelectedPortId('__pair_new__');
+          setSelectedPortId('');
+          setSelectedOpticalPort('');
         }
       }
     } catch (err) {
@@ -621,7 +607,13 @@ export default function Stage08Page() {
 
     if (webSerialService.hasNativeSerial()) {
       try {
-        const eff = getEffectiveSerialConfig(usbSerialConfig);
+        const eff = {
+          ...getEffectiveSerialConfig(usbSerialConfig),
+          stageId: 8,
+          stageName: 'Stage 8',
+          portType: 'Optical Port',
+          comPortLabel: selectedOpticalPort || usbSerialConfig?.comPortLabel || ''
+        };
         let res = null;
         if (forceNewChooser) {
           res = await webSerialService.requestPortAndConnect(currentOperatorId, eff);
@@ -695,33 +687,61 @@ export default function Stage08Page() {
   // Direct connect handler from Settings modal
   const handleDirectConnectOptical = async () => {
     if (opticalStatus.checking) return;
-    if (selectedPortId && selectedPortId.startsWith('server_')) {
-      const path = selectedPortId.replace('server_', '');
-      await handleConnectServerPort(path);
-    } else if (selectedPortId && selectedPortId.startsWith('paired_')) {
-      const idx = parseInt(selectedPortId.replace('paired_', ''), 10);
-      const target = pairedPorts[idx];
-      if (target && target.port) {
-        await handleConnectCable(target.port, false);
-      } else {
-        await handleConnectCable(null, true);
+    const targetPort = selectedOpticalPort || (opticalPortOptions.find(o => !o.isTaken)?.value);
+    if (!targetPort) {
+      if (!unifiedHardwarePortManager.isServerMachine()) {
+        try {
+          const paired = await unifiedHardwarePortManager.pairNewPort('optical');
+          if (paired) {
+            setSelectedOpticalPort(paired.friendlyName);
+            setSelectedPortId(paired.friendlyName);
+            await refreshHardwarePortOptions();
+            return await handleDirectConnectOptical();
+          }
+        } catch (e) {
+          if (e.name !== 'NotFoundError') {
+            showErrorAlert('Port Pair Notice', e.message);
+          }
+        }
+        return;
       }
-    } else {
-      await handleConnectCable(null, false);
+      showErrorAlert('No Port Selected', 'Please select a COM port from the dropdown.');
+      return;
+    }
+    setOpticalStatus(prev => ({ ...prev, checking: true }));
+    try {
+      const res = await unifiedHardwarePortManager.connectPort({
+        role: 'optical',
+        portName: targetPort,
+        stageId: 8,
+        stageName: 'Stage 8',
+        portType: 'Optical Port',
+        config: usbSerialConfig,
+        operatorId: currentOperatorId
+      });
+      setSelectedOpticalPort(res.portName);
+      setSelectedPortId(res.portName);
+      setOpticalStatus({
+        connected: true,
+        port: res.portName,
+        friendlyName: res.portName,
+        baudRate: usbSerialConfig.baudRate,
+        ports: opticalPortOptions,
+        source: res.source || (res.tunnelId ? 'client_webserial' : 'server'),
+        tunnelId: res.tunnelId || null,
+        deviceId: webSerialService.deviceId,
+        checking: false
+      });
+      setShowUsbSettings(false);
+    } catch (err) {
+      setOpticalStatus(prev => ({ ...prev, connected: false, checking: false }));
+      showErrorAlert('Optical Port Connection Failed', err.message);
     }
   };
 
   // Disconnection handler
   const handleHardwareDisconnection = async (reason = 'Optical Port disconnected.', isUserInitiated = false) => {
     manualDisconnectedRef.current = isUserInitiated;
-
-    try {
-      if (isUserInitiated) {
-        localStorage.setItem('zenmeter_optical_was_connected', 'false');
-        localStorage.setItem('zenmeter_optical_manual_disconnect', 'true');
-      }
-    } catch (_) { }
-
     setOpticalStatus(prev => ({
       ...prev,
       connected: false,
@@ -729,13 +749,8 @@ export default function Stage08Page() {
       source: null,
       tunnelId: null
     }));
-
     try {
-      await webSerialService.disconnect();
-    } catch (_) { }
-
-    try {
-      await stage08Service.disconnectOpticalPort({ port: selectedOpticalPortRef.current || opticalStatusRef.current?.port });
+      await unifiedHardwarePortManager.disconnectPort({ role: 'optical', portName: opticalStatus.port });
     } catch (_) { }
   };
 
@@ -811,31 +826,43 @@ export default function Stage08Page() {
         const meterData = res?.meterData || {};
         const validSerial = meterData?.serialNo ? String(meterData.serialNo).trim() : '';
         const validImei = meterData?.imeiNo ? String(meterData.imeiNo).trim() : '';
-        const validNic = meterData?.nicSrNo ? String(meterData.nicSrNo).trim() : 'FAIL';
-        const validUid = meterData?.uid || (validSerial ? `UID-${validSerial}` : 'FAIL');
+        const validNic = meterData?.nicSrNo ? String(meterData.nicSrNo).trim() : '';
+        const validUid = meterData?.uid || (validSerial ? `UID-${validSerial}` : '');
 
         setMeterReadStatus('failed');
         setMeterReaderData({
-          uid: validUid || 'FAIL',
+          uid: validUid || 'NOT DETECTED',
           status: res?.status || 'FAIL',
-          meterSn: validSerial || 'FAIL',
-          imei: validImei || 'FAIL',
-          nicSn: validNic || 'FAIL',
+          meterSn: validSerial || 'NOT DETECTED',
+          imei: validImei || 'NOT DETECTED',
+          nicSn: validNic || 'NOT DETECTED',
           db: res?.db || 'NOT SAVED',
           result: res?.result || 'FAILED'
         });
+
+        if (validSerial) {
+          setMeterSerial(validSerial);
+        }
+
         showErrorAlert('NIC Verification Failed', res?.message || 'Scanned NIC SN does not match meter read NIC SN. Stage 8 not saved.');
       }
     } catch (err) {
+      const errData = err?.data || {};
+      const meterData = errData?.meterData || {};
+      const validSerial = meterData?.serialNo ? String(meterData.serialNo).trim() : '';
+      const validImei = meterData?.imeiNo ? String(meterData.imeiNo).trim() : '';
+      const validNic = meterData?.nicSrNo ? String(meterData.nicSrNo).trim() : '';
+      const validUid = meterData?.uid || (validSerial ? `UID-${validSerial}` : '');
+
       setMeterReadStatus('failed');
       setMeterReaderData({
-        uid: 'ERROR',
-        status: 'FAIL',
-        meterSn: 'ERROR',
-        imei: 'ERROR',
-        nicSn: 'ERROR',
-        db: 'NOT SAVED',
-        result: 'FAILED'
+        uid: validUid || 'ERROR',
+        status: errData?.status || 'FAIL',
+        meterSn: validSerial || 'ERROR',
+        imei: validImei || 'ERROR',
+        nicSn: validNic || 'ERROR',
+        db: errData?.db || 'NOT SAVED',
+        result: errData?.result || 'FAILED'
       });
       showErrorAlert('Optical Read Error', err.message || 'Error communicating with optical probe.');
     } finally {
@@ -915,197 +942,36 @@ export default function Stage08Page() {
 
   // Auto-connect and scan Optical Port on mount / page reload
   const initOpticalPort = async (checkMounted = () => true) => {
-    let wasOpticalConnected = false;
-    let opticalManualDisconnect = false;
-    let lastOpticalPort = null;
-    let lastOpticalSource = 'server';
     try {
-      wasOpticalConnected = localStorage.getItem('zenmeter_optical_was_connected') === 'true';
-      opticalManualDisconnect = localStorage.getItem('zenmeter_optical_manual_disconnect') === 'true';
-      lastOpticalPort = localStorage.getItem('zenmeter_optical_last_port');
-      lastOpticalSource = localStorage.getItem('zenmeter_optical_source') || 'server';
-      if (lastOpticalPort && isDummyPortName(lastOpticalPort)) {
-        lastOpticalPort = null;
-      }
-    } catch (_) { }
-
-    manualDisconnectedRef.current = opticalManualDisconnect;
-
-    // 1. Scan paired Web Serial ports
-    const pairedList = await refreshPairedPorts();
-    if (!checkMounted()) return;
-
-    // 2. Query server status
-    let detectedServerPorts = [];
-    let isServer = true;
-    let optStatusRes = null;
-    try {
-      const devId = webSerialService.deviceId;
-      optStatusRes = await stage08Service.getOpticalStatus({
-        deviceId: devId
+      const optRestore = await unifiedHardwarePortManager.restorePortOnMount({
+        role: 'optical',
+        stageId: 8,
+        stageName: 'Stage 8',
+        portType: 'Optical Port',
+        config: usbSerialConfig,
+        operatorId: currentOperatorId
       });
-      if (optStatusRes?.isServerMachine !== undefined) {
-        isServer = optStatusRes.isServerMachine;
-        if (checkMounted()) setIsServerMachine(optStatusRes.isServerMachine);
+      if (optRestore && checkMounted()) {
+        setSelectedOpticalPort(optRestore.portName);
+        setSelectedPortId(optRestore.portName);
+        setOpticalStatus({
+          connected: true,
+          port: optRestore.portName,
+          friendlyName: optRestore.portName,
+          baudRate: usbSerialConfig.baudRate,
+          ports: await unifiedHardwarePortManager.getAvailablePorts('optical', 8, null, optRestore.portName),
+          source: optRestore.source || (optRestore.tunnelId ? 'client_webserial' : 'server'),
+          tunnelId: optRestore.tunnelId || null,
+          deviceId: webSerialService.deviceId,
+          checking: false
+        });
       }
-      detectedServerPorts = (optStatusRes && Array.isArray(optStatusRes.ports))
-        ? optStatusRes.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
-        : [];
-      if (checkMounted() && isServer && detectedServerPorts.length > 0) {
-        setAvailableOpticalPorts(detectedServerPorts);
-      } else if (checkMounted() && !isServer) {
-        setAvailableOpticalPorts([]);
-      }
-    } catch (e) {
-      console.warn('[Stage08] Port scan error on mount:', e.message);
+    } catch (optErr) {
+      console.warn('[Stage08] Optical auto-reconnect note:', optErr.message);
     }
 
     if (!checkMounted()) return;
-
-    const eff = getEffectiveSerialConfig(usbSerialConfig);
-    const summary = formatSerialSummary(usbSerialConfig);
-
-    // 3. Check if backend already has active Optical connection
-    const isBackendOpticalOpen = Boolean(optStatusRes && optStatusRes.connected && optStatusRes.port);
-    const targetOptKey = lastOpticalPort ? extractPortKey(lastOpticalPort).toLowerCase() : '';
-    const optIsPhysicallyPresent = Boolean(
-      targetOptKey &&
-      detectedServerPorts.some(p =>
-        extractPortKey(p.path).toLowerCase() === targetOptKey ||
-        extractPortKey(p.friendlyName || '').toLowerCase() === targetOptKey
-      )
-    );
-    const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || Boolean(lastOpticalPort));
-
-    if (isServer && isBackendOpticalOpen && checkMounted()) {
-      // Backend already has port connected -> restore connection in frontend state
-      const activePort = optStatusRes.port ? (extractPortKey(optStatusRes.port) || optStatusRes.port) : (lastOpticalPort || 'COM3');
-      setOpticalStatus({
-        connected: true,
-        port: activePort,
-        friendlyName: optStatusRes.friendlyName || `${activePort} (${summary})`,
-        baudRate: optStatusRes.baudRate || eff.baudRate || 9600,
-        ports: detectedServerPorts.length > 0 ? detectedServerPorts : (optStatusRes.ports || []),
-        source: 'server',
-        tunnelId: null,
-        checking: false
-      });
-      setSelectedOpticalPort(activePort);
-      setSelectedPortId(`server_${activePort}`);
-      try {
-        localStorage.setItem('zenmeter_optical_was_connected', 'true');
-        localStorage.setItem('zenmeter_optical_last_port', activePort);
-        localStorage.setItem('zenmeter_optical_source', 'server');
-        localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
-      } catch (_) { }
-      return;
-    }
-
-    // 4. Auto-reconnect if it was previously connected and not manually disconnected
-    if (shouldConnectOptical && checkMounted()) {
-      // Option A: If previously connected via WebSerial, try reconnecting paired port
-      if (lastOpticalSource === 'client_webserial' && webSerialService.hasNativeSerial() && pairedList.length > 0) {
-        const freePort = pairedList.find(p => !p.port.readable || webSerialService.port === p.port) || pairedList[0];
-        if (freePort && freePort.port) {
-          try {
-            const res = await webSerialService.connectPort(freePort.port, currentOperatorId, eff);
-            if (res && res.success && checkMounted()) {
-              const refreshed = await refreshPairedPorts();
-              const newIdx = (refreshed || []).findIndex(p => p.port === webSerialService.port);
-              setSelectedPortId(newIdx >= 0 ? `paired_${newIdx}` : 'paired_0');
-              setSelectedOpticalPort(res.portName);
-              setOpticalStatus({
-                connected: true,
-                port: res.portName,
-                friendlyName: `${res.portName} (${summary})`,
-                baudRate: eff.baudRate,
-                ports: detectedServerPorts.length > 0 ? detectedServerPorts : [{ path: res.tunnelId, friendlyName: `${res.portName}` }],
-                source: 'client_webserial',
-                tunnelId: res.tunnelId,
-                deviceId: webSerialService.deviceId,
-                checking: false
-              });
-              try {
-                localStorage.setItem('zenmeter_optical_was_connected', 'true');
-                localStorage.setItem('zenmeter_optical_last_port', res.portName);
-                localStorage.setItem('zenmeter_optical_source', 'client_webserial');
-                localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
-              } catch (_) { }
-              return;
-            }
-          } catch (e) {
-            console.warn('[Stage08] WebSerial auto-reconnect failed, falling back to server port:', e.message);
-          }
-        }
-      }
-
-      // Option B: Reconnect server COM port (Only on server machine)
-      const targetServerPort = (isServer && lastOpticalPort && optIsPhysicallyPresent)
-        ? lastOpticalPort
-        : (isServer && detectedServerPorts.length > 0 ? detectedServerPorts[0].path : null);
-
-      if (isServer && targetServerPort && checkMounted()) {
-        const success = await handleConnectServerPort(targetServerPort, true);
-        if (success && checkMounted()) return;
-      }
-
-      // Option C: If server port connect failed but WebSerial is available, try paired port
-      if (webSerialService.hasNativeSerial() && pairedList.length > 0 && checkMounted()) {
-        const freePort = pairedList.find(p => !p.port.readable || webSerialService.port === p.port);
-        if (freePort && freePort.port) {
-          try {
-            const res = await webSerialService.connectPort(freePort.port, currentOperatorId, eff);
-            if (res && res.success && checkMounted()) {
-              const refreshed = await refreshPairedPorts();
-              const newIdx = (refreshed || []).findIndex(p => p.port === webSerialService.port);
-              setSelectedPortId(newIdx >= 0 ? `paired_${newIdx}` : 'paired_0');
-              setSelectedOpticalPort(res.portName);
-              setOpticalStatus({
-                connected: true,
-                port: res.portName,
-                friendlyName: `${res.portName} (${summary})`,
-                baudRate: eff.baudRate,
-                ports: detectedServerPorts.length > 0 ? detectedServerPorts : [{ path: res.tunnelId, friendlyName: `${res.portName}` }],
-                source: 'client_webserial',
-                tunnelId: res.tunnelId,
-                deviceId: webSerialService.deviceId,
-                checking: false
-              });
-              try {
-                localStorage.setItem('zenmeter_optical_was_connected', 'true');
-                localStorage.setItem('zenmeter_optical_last_port', res.portName);
-                localStorage.setItem('zenmeter_optical_source', 'client_webserial');
-                localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
-              } catch (_) { }
-              return;
-            }
-          } catch (_) { }
-        }
-      }
-    }
-
-    if (!checkMounted()) return;
-
-    // Fallback: not connected, but select the default port so operator can connect with 1 click
-    setOpticalStatus(prev => ({
-      ...prev,
-      connected: false,
-      ports: detectedServerPorts,
-      checking: false
-    }));
-
-    if (detectedServerPorts.length > 0) {
-      const savedPort = lastOpticalPort && !isDummyPortName(lastOpticalPort) ? lastOpticalPort : null;
-      const matchedPort = savedPort && detectedServerPorts.find(p => p.path && p.path.toLowerCase() === savedPort.toLowerCase());
-      const targetPort = matchedPort ? matchedPort.path : detectedServerPorts[0].path;
-      if (targetPort) {
-        setSelectedPortId(`server_${targetPort}`);
-        setSelectedOpticalPort(targetPort);
-      }
-    } else if (pairedList.length > 0) {
-      setSelectedPortId('paired_0');
-      setSelectedOpticalPort(pairedList[0].friendlyName);
-    }
+    await refreshHardwarePortOptions();
   };
 
   // Hardware listeners & auto-connect on mount / page reload
@@ -1636,10 +1502,28 @@ export default function Stage08Page() {
               {METER_READER_FIELDS.map((field) => {
                 const rawVal = meterReaderData[field.key] || '';
                 const valUpper = String(rawVal).trim().toUpperCase();
-                const isFieldFailed = meterReadStatus === 'failed' || valUpper === 'FAIL' || valUpper === 'FAILED' || valUpper === 'ERROR' || valUpper === 'READ FAIL' || valUpper === 'NOT SAVED' || valUpper === 'MISMATCH';
-                const isFieldSuccess = (meterReadStatus === 'success' || (Boolean(meterReaderData.meterSn) && (meterReaderData.status === 'PASS' || meterReaderData.status === 'SUCCESS') && (meterReaderData.result === 'PASS' || meterReaderData.result === 'SUCCESS' || meterReaderData.result === 'ALL STEP COMPLETED'))) && !isFieldFailed && valUpper.length > 0;
+                const isStatusField = ['status', 'db', 'result'].includes(field.key);
 
-                const textColor = isFieldSuccess ? '#16a34a' : isFieldFailed ? '#dc2626' : undefined;
+                let textColor = undefined;
+                if (isStatusField) {
+                  if (valUpper === 'PASS' || valUpper === 'SUCCESS' || valUpper === 'SAVED' || valUpper.includes('COMPLETED')) {
+                    textColor = '#16a34a';
+                  } else if (valUpper === 'FAIL' || valUpper === 'FAILED' || valUpper === 'NOT SAVED' || valUpper === 'ERROR') {
+                    textColor = '#dc2626';
+                  }
+                } else {
+                  if (valUpper === 'ERROR' || valUpper === 'FAIL' || valUpper === 'NOT DETECTED') {
+                    textColor = '#dc2626';
+                  } else if (meterReadStatus === 'success') {
+                    textColor = '#16a34a';
+                  } else if (meterReadStatus === 'failed') {
+                    if (field.key === 'nicSn') {
+                      textColor = '#dc2626';
+                    } else if (rawVal) {
+                      textColor = '#0f172a';
+                    }
+                  }
+                }
 
                 return (
                   <div className="col" key={field.key}>
@@ -1697,100 +1581,36 @@ export default function Stage08Page() {
         </div>
       </div>
 
-      {/* Modal Popup: Optical Port COM Settings */}
-      <Modal
+      {/* Modal Popup: Optical Port COM Settings (Image 2) */}
+      <HardwarePortModal
         isOpen={showUsbSettings}
         onClose={() => setShowUsbSettings(false)}
-        maxWidth="500px"
-        title={
-          <div className="d-flex align-items-center gap-2">
-            <i className="ti ti-adjustments text-danger fs-5"></i>
-            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
-              Optical Port - COM Port Settings
-            </span>
-          </div>
-        }
-      >
-        <ComPortSettingsPanel
-          title="OPTICAL PORT - COM PORT SETTINGS"
-          config={usbSerialConfig}
-          onChange={updateUsbConfig}
-          onClose={() => setShowUsbSettings(false)}
-          showHeader={false}
-          commChannelContent={
-            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-              <div className="input-group input-group-sm flex-grow-1">
-                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                  <i className="ti ti-plug" style={{ fontSize: '12px' }}></i>
-                </span>
-                <select
-                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                  style={{ height: '34px', fontSize: '12px' }}
-                  value={selectedPortId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '__pair_new__') {
-                      setSelectedPortId('__pair_new__');
-                      handleConnectCable(null, true);
-                      return;
-                    }
-                    setSelectedPortId(val);
-                    if (val && val.startsWith('paired_')) {
-                      const idx = parseInt(val.replace('paired_', ''), 10);
-                      if (pairedPorts[idx]) {
-                        setSelectedOpticalPort(pairedPorts[idx].friendlyName);
-                      }
-                    } else if (val && val.startsWith('server_')) {
-                      setSelectedOpticalPort(val.replace('server_', ''));
-                    }
-                  }}
-                  disabled={opticalStatus.checking || opticalStatus.connected}
-                >
-                  <option value="" disabled>Select / Connect USB Port...</option>
-                  {opticalPortOptions.length > 0 ? (
-                    opticalPortOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
-                        {opt.label}{opt.takenMsg}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No COM Port Detected</option>
-                  )}
-                  <option value="__pair_new__">
-                    Select / Pair COM Port from Device Manager...
-                  </option>
-                </select>
-              </div>
-
-              {!opticalStatus.connected ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                  onClick={handleDirectConnectOptical}
-                  disabled={opticalStatus.checking}
-                  title="Connect Optical USB Port"
-                >
-                  <i className={`ti ${opticalStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
-                  <span>{opticalStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                  onClick={handleToggleOpticalConnection}
-                  disabled={opticalStatus.checking}
-                  title={`Disconnect (${opticalStatus.friendlyName || opticalStatus.port || 'USB Port'})`}
-                >
-                  <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
-                  <span>Disconnect</span>
-                </button>
-              )}
-            </div>
+        title="Optical Port"
+        connected={opticalStatus.connected}
+        checking={opticalStatus.checking}
+        portOptions={opticalPortOptions}
+        selectedPort={selectedOpticalPort}
+        onSelectPort={(val) => {
+          setSelectedOpticalPort(val);
+          setSelectedPortId(val);
+        }}
+        onPairNewPort={async () => {
+          try {
+            const paired = await unifiedHardwarePortManager.pairNewPort('optical');
+            if (paired) {
+              setSelectedOpticalPort(paired.friendlyName);
+              setSelectedPortId(paired.friendlyName);
+              await refreshHardwarePortOptions();
+            }
+          } catch (e) {
+            showErrorAlert('Port Pair Notice', e.message);
           }
-        />
-      </Modal>
+        }}
+        onConnect={handleDirectConnectOptical}
+        onDisconnect={handleToggleOpticalConnection}
+        config={usbSerialConfig}
+        onChangeConfig={(newCfg) => setUsbSerialConfig(newCfg)}
+      />
     </div>
   );
 }

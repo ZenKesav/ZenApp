@@ -87,7 +87,6 @@ export function useStage04NicPrint(currentUser) {
         setDemoMode(false);
         setTestState('USB_CONNECTED');
         appendLog(`Connected to hardware port: ${port}`);
-        showSuccessAlert('Jig Connected', `Connected to ${port}`);
       }
     } catch (err) {
       showErrorAlert('Connection Failed', err.message || 'Failed to connect to jig hardware.');

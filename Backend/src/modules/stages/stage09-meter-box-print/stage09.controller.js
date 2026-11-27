@@ -1,35 +1,6 @@
 const os = require('os');
 const Stage09Service = require('./stage09.service');
-
-function isRequestFromLocalServer(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.socket?.remoteAddress || req.ip || '');
-  const cleanIp = String(rawIp).replace(/^::ffff:/, '').replace(/^.*:/, '').trim();
-
-  if (
-    cleanIp === '127.0.0.1' ||
-    cleanIp === 'localhost' ||
-    cleanIp === '::1' ||
-    rawIp === '127.0.0.1' ||
-    rawIp === '::1' ||
-    rawIp === '::ffff:127.0.0.1'
-  ) {
-    return true;
-  }
-
-  try {
-    const networkInterfaces = os.networkInterfaces();
-    for (const interfaceKey of Object.keys(networkInterfaces)) {
-      for (const net of networkInterfaces[interfaceKey]) {
-        if (net && (net.address === cleanIp || net.address === rawIp)) {
-          return true;
-        }
-      }
-    }
-  } catch (_) { }
-
-  return false;
-}
+const { isRequestFromLocalServer } = require('../../../core/helpers/network.helper');
 
 const Stage09Controller = {
   async checkOpticalCable(req, res, next) {

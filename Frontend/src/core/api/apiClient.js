@@ -58,7 +58,10 @@ export async function request(endpoint, options = {}) {
       throw new Error(`Server connection error (${response.status}). Please check backend service.`);
     }
 
-    throw new Error(data.message || `Request failed with status ${response.status}`);
+    const err = new Error(data.message || `Request failed with status ${response.status}`);
+    err.data = data;
+    err.response = response;
+    throw err;
   }
 
   return data;

@@ -1,4 +1,5 @@
 import webSerialService from './webSerialService';
+import hardwarePortLockService, { extractPortIdentifier } from './hardwarePortLockService';
 
 /**
  * LaserWebSerialService
@@ -47,9 +48,38 @@ class LaserWebSerialService {
     return typeof window !== 'undefined' && 'serial' in navigator;
   }
 
+  getDeviceRegistry() {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem('zenmeter_paired_ports_registry');
+      return raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  saveDeviceRegistryName(info = {}, index = 0, assignedName = '') {
+    if (!assignedName || typeof window === 'undefined') return;
+    try {
+      const vid = info.usbVendorId || 0;
+      const pid = info.usbProductId || 0;
+      if (!vid && !pid) return; // Do not register ghost ports with no VID/PID
+      const reg = this.getDeviceRegistry();
+      const cleanName = assignedName.trim();
+      reg[`${vid}_${pid}_${index}`] = cleanName;
+      if (vid && pid) reg[`${vid}_${pid}`] = cleanName;
+      const comMatch = cleanName.match(/COM\d+/i);
+      if (comMatch) reg[`port_${index}`] = `USB Serial Port (${comMatch[0].toUpperCase()})`;
+      localStorage.setItem('zenmeter_paired_ports_registry', JSON.stringify(reg));
+    } catch (_) { }
+  }
+
   formatDeviceName(info = {}, index = 0, customLabel = '') {
     const vid = info.usbVendorId || 0;
     const pid = info.usbProductId || 0;
+    if (!vid && !pid) return ''; // Skip ghost/disconnected device with no VID/PID
+    const reg = this.getDeviceRegistry();
+    const registeredName = reg[`${vid}_${pid}_${index}`] || reg[`${vid}_${pid}`] || reg[`port_${index}`];
 
     let baseName = null;
     if (vid === 0x10C4) baseName = 'Silicon Labs CP210x USB to UART Bridge';
@@ -58,12 +88,17 @@ class LaserWebSerialService {
     else if (vid === 0x1A86) baseName = 'CH340 USB Serial Adapter';
     else if (vid === 0x067B) baseName = 'Prolific PL2303 USB Serial';
     else if (vid && pid) baseName = `USB Serial (${vid.toString(16).padStart(4, '0').toUpperCase()}:${pid.toString(16).padStart(4, '0').toUpperCase()})`;
-    else baseName = `USB Serial Port ${index + 1}`;
+    else baseName = 'USB Serial Port';
 
-    const label = customLabel ? String(customLabel).trim() : '';
+    const label = customLabel ? String(customLabel).trim() : (registeredName || '');
     if (label) {
-      const cleanLabel = label.startsWith('(') ? label : `(${label})`;
-      return `${baseName} ${cleanLabel}`;
+      if (/^COM\d+$/i.test(label)) {
+        return `USB Serial Port (${label.toUpperCase()})`;
+      }
+      if (label.includes('(')) {
+        return label;
+      }
+      return `${baseName} (${label})`;
     }
     return baseName;
   }
@@ -196,6 +231,33 @@ class LaserWebSerialService {
     };
   }
 
+  async autoConnect(serialConfig = {}, preferredPort = null) {
+    if (!this.hasNativeSerial()) return null;
+    try {
+      const ports = await navigator.serial.getPorts();
+      if (!ports || ports.length === 0) return null;
+
+      let portToUse = null;
+      if (preferredPort) {
+        const cleanPref = extractPortIdentifier(preferredPort).toLowerCase();
+        portToUse = ports.find((p, idx) => {
+          const info = p.getInfo?.() || {};
+          const name = this.formatDeviceName(info, idx, serialConfig?.comPortLabel || '');
+          return extractPortIdentifier(name).toLowerCase() === cleanPref;
+        });
+      }
+      if (!portToUse && ports.length > 0) {
+        portToUse = ports.find(p => p !== webSerialService?.port) || ports[0];
+      }
+      if (portToUse) {
+        return await this.connectPort(portToUse, serialConfig);
+      }
+    } catch (err) {
+      console.warn('[LaserWebSerial] Auto-connect notice:', err.message);
+    }
+    return null;
+  }
+
   /**
    * Request user to pick a serial port via native browser prompt
    */
@@ -220,9 +282,9 @@ class LaserWebSerialService {
   async connectPort(portInstance, serialConfig = {}) {
     if (!portInstance) throw new Error('No port instance provided.');
 
-    // 1. Check if this port is already in use by Optical Port
-    if ((webSerialService?.port === portInstance && webSerialService?.connected) || (portInstance.readable !== null && this.port !== portInstance)) {
-      throw new Error('This USB port is already in use by Optical Port. Please select or plug in your Laser Machine USB cable.');
+    // 1. Only reject if port is ACTUALLY connected and actively used by Optical Port
+    if (webSerialService && webSerialService.connected && webSerialService.port === portInstance) {
+      throw new Error('This USB port is already in use by Optical Port. Please select another COM port or disconnect Optical Port first.');
     }
 
     // 2. Check if already connected to this exact port instance
@@ -242,8 +304,21 @@ class LaserWebSerialService {
     try {
       const info = portInstance.getInfo?.() || {};
       this.portName = this.formatDeviceName(info, 0, serialConfig?.comPortLabel || '');
+      if (serialConfig?.comPortLabel) {
+        this.saveDeviceRegistryName(info, 0, this.portName);
+      }
     } catch (e) {
       this.portName = 'Laser Port';
+    }
+
+    const targetStageId = serialConfig?.stageId || 9;
+    const targetStageName = serialConfig?.stageName || `Stage ${targetStageId}`;
+    const portRole = serialConfig?.portType || 'Laser Port';
+
+    // Prevent connecting if locked by another stage on this machine
+    const lockCheck = hardwarePortLockService.checkLock(this.portName, targetStageId);
+    if (lockCheck.isLocked) {
+      throw new Error(`Port ${this.portName} is ${lockCheck.message}`);
     }
 
     const baudRate = Number(serialConfig?.baudRate) || 9600;
@@ -265,8 +340,12 @@ class LaserWebSerialService {
         });
         openSuccess = true;
       } catch (errA) {
-        lastErr = errA;
-        console.warn('[LaserWebSerial] Standard open failed, trying baudRate-only fallback:', errA.message);
+        if (errA.message && errA.message.toLowerCase().includes('already open')) {
+          openSuccess = true;
+        } else {
+          lastErr = errA;
+          console.warn('[LaserWebSerial] Standard open failed, trying baudRate-only fallback:', errA.message);
+        }
       }
 
       if (!openSuccess) {
@@ -274,22 +353,30 @@ class LaserWebSerialService {
           await this.port.open({ baudRate });
           openSuccess = true;
         } catch (errB) {
-          lastErr = errB;
+          if (errB.message && errB.message.toLowerCase().includes('already open')) {
+            openSuccess = true;
+          } else {
+            lastErr = errB;
+          }
         }
       }
 
-      if (!openSuccess) {
+      if (!openSuccess && !this.port.readable) {
         this.port = null;
         const msg = (lastErr && lastErr.message) ? lastErr.message : 'Unknown error';
-        if (msg.toLowerCase().includes('already open')) {
-          throw new Error('This USB port is already open by another program or connection. Please select your Laser Machine cable.');
-        }
         throw new Error(`Unable to open serial port (${msg})`);
       }
     }
 
     this.connected = true;
     this.rxBuffer = '';
+
+    // Claim exclusive hardware lock across all tabs/stages on this PC
+    hardwarePortLockService.claimLock(this.portName, {
+      stageId: targetStageId,
+      stageName: targetStageName,
+      portType: portRole
+    });
 
     this.startReadLoop();
     this.notify();
@@ -337,6 +424,10 @@ class LaserWebSerialService {
         await this.port.close();
       } catch (_) { }
       this.port = null;
+    }
+
+    if (this.portName) {
+      hardwarePortLockService.releaseLock(this.portName);
     }
 
     this.rxBuffer = '';
@@ -541,4 +632,8 @@ class LaserWebSerialService {
   }
 }
 
-export default new LaserWebSerialService();
+const laserWebSerialService = new LaserWebSerialService();
+if (typeof window !== 'undefined') {
+  window.__laserWebSerialService = laserWebSerialService;
+}
+export default laserWebSerialService;

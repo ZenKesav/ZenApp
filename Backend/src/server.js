@@ -32,6 +32,18 @@ async function bootstrap() {
     // 3. Attach Realtime WebSocket Gateway
     initWebSocketServer(server);
 
+    // Handle port binding and startup errors gracefully
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        logger.error(`[EADDRINUSE] Port ${PORT} is already occupied by another process.`);
+        logger.error(`To release port ${PORT}, run in PowerShell:`);
+        logger.error(`Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force`);
+      } else {
+        logger.error('Zenmeter Server error:', err);
+      }
+      process.exit(1);
+    });
+
     // 4. Start Server Listener on 0.0.0.0 (all network interfaces)
     server.listen(PORT, '0.0.0.0', () => {
       const networkIp = getLocalIpAddress();

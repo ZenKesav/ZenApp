@@ -727,7 +727,8 @@ class DlmsOpticalService {
     tunnel_id = null,
     tunnelId = null,
     device_id = null,
-    deviceId = null
+    deviceId = null,
+    skipDbSave = false
   }) {
     const logs = [];
     const addLog = (msg, status = 'INFO') => {
@@ -743,7 +744,7 @@ class DlmsOpticalService {
 
     addLog('Initiating real DLMS optical communication probe sequence...', 'INFO');
 
-    if (work_id) {
+    if (work_id && !skipDbSave && (stage_id === null || Number(stage_id) === 9)) {
       try {
         await this.assertWorkFormTargetNotReached({ work_id, stage_id, operator_id, user_role });
       } catch (limitErr) {
@@ -1172,6 +1173,23 @@ class DlmsOpticalService {
         operator_completed_count: operatorCompletedCount,
         batch_completed_count: batchCompletedCount,
         target_quantity: targetQuantity,
+        logs
+      };
+    }
+
+    if (skipDbSave || (stage_id !== null && Number(stage_id) !== 9)) {
+      return {
+        success: true,
+        savedToDb: false,
+        isIncomplete: false,
+        meterData: meterValues,
+        savedRecord: {
+          uid: meterValues.serialNo ? `UID-${meterValues.serialNo}` : `UID-${Date.now()}`,
+          serialNo: meterValues.serialNo
+        },
+        port: targetPort,
+        stage_id: dynamicStageId,
+        work_id,
         logs
       };
     }

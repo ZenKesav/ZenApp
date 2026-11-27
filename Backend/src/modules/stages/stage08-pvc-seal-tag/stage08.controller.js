@@ -90,6 +90,7 @@ const Stage08Controller = {
           port,
           work_id,
           stage_id: 8,
+          skipDbSave: true,
           operator_id: effectiveOperator,
           operator_name: effectiveOperatorName,
           user_role: effectiveUserRole,
@@ -98,19 +99,25 @@ const Stage08Controller = {
         });
       } catch (readErr) {
         return res.status(200).json({
-          success: false,
+          success: true,
           matched: false,
           status: 'FAIL',
           db: 'NOT SAVED',
           result: 'FAILED',
+          meterData: {
+            serialNo: '',
+            imeiNo: '',
+            nicSrNo: '',
+            uid: ''
+          },
           message: readErr.message || 'Error communicating with optical probe.'
         });
       }
 
       const meterData = readResult?.meterData || {};
-      const serialNo = meterData.serialNo || '';
-      const imeiNo = meterData.imeiNo || '';
-      let meterNic = meterData.nicSrNo || '';
+      const serialNo = meterData.serialNo ? String(meterData.serialNo).trim() : '';
+      const imeiNo = meterData.imeiNo ? String(meterData.imeiNo).trim() : '';
+      let meterNic = meterData.nicSrNo ? String(meterData.nicSrNo).trim() : '';
       const uid = readResult?.savedRecord?.uid || meterData.uid || (serialNo ? `UID-${serialNo}` : `UID-${Date.now()}`);
 
       // 2. If meter did not return NIC SN from optical DLMS, check meter_mapping and prior stage records by serial or IMEI
@@ -119,31 +126,37 @@ const Stage08Controller = {
           const { query } = require('../../../core/database/connection');
           if (serialNo) {
             const mmSerial = await query.get(
-              `SELECT nic_serial_no FROM meter_mapping WHERE (meter_serial_no = ? OR pcb_serial_no = ?) AND nic_serial_no IS NOT NULL AND nic_serial_no <> '' LIMIT 1`,
+              `SELECT nic_serial_no, chip_uid FROM meter_mapping WHERE (meter_serial_no = ? OR pcb_serial_no = ?) AND nic_serial_no IS NOT NULL AND nic_serial_no <> '' LIMIT 1`,
               [serialNo, serialNo]
             );
-            if (mmSerial && mmSerial.nic_serial_no) meterNic = mmSerial.nic_serial_no;
+            if (mmSerial?.nic_serial_no) meterNic = mmSerial.nic_serial_no.trim();
+            if (mmSerial?.chip_uid && (!meterData.uid || String(meterData.uid).startsWith('UID-'))) {
+              meterData.uid = mmSerial.chip_uid;
+            }
           }
           if (!meterNic && imeiNo) {
             const mmImei = await query.get(
-              `SELECT nic_serial_no FROM meter_mapping WHERE imei_no = ? AND nic_serial_no IS NOT NULL AND nic_serial_no <> '' LIMIT 1`,
+              `SELECT nic_serial_no, chip_uid FROM meter_mapping WHERE imei_no = ? AND nic_serial_no IS NOT NULL AND nic_serial_no <> '' LIMIT 1`,
               [imeiNo]
             );
-            if (mmImei && mmImei.nic_serial_no) meterNic = mmImei.nic_serial_no;
+            if (mmImei?.nic_serial_no) meterNic = mmImei.nic_serial_no.trim();
+            if (mmImei?.chip_uid && (!meterData.uid || String(meterData.uid).startsWith('UID-'))) {
+              meterData.uid = mmImei.chip_uid;
+            }
           }
           if (!meterNic && imeiNo) {
             const s4 = await query.get(
               `SELECT nic_serial_no FROM stage04_nic_print_records WHERE imei_no = ? AND nic_serial_no IS NOT NULL AND nic_serial_no <> '' ORDER BY id DESC LIMIT 1`,
               [imeiNo]
             );
-            if (s4 && s4.nic_serial_no) meterNic = s4.nic_serial_no;
+            if (s4?.nic_serial_no) meterNic = s4.nic_serial_no.trim();
           }
           if (!meterNic && imeiNo) {
             const s2 = await query.get(
               `SELECT nic_serial_no FROM stage02_nic_records WHERE imei_no = ? AND nic_serial_no IS NOT NULL AND nic_serial_no <> '' ORDER BY id DESC LIMIT 1`,
               [imeiNo]
             );
-            if (s2 && s2.nic_serial_no) meterNic = s2.nic_serial_no;
+            if (s2?.nic_serial_no) meterNic = s2.nic_serial_no.trim();
           }
           if (meterNic) {
             meterData.nicSrNo = meterNic;
@@ -152,8 +165,15 @@ const Stage08Controller = {
       }
 
       // 3. Compare Scanned NIC SN with Meter Read NIC SN
-      const effectiveScannedNic = String(scanned_nic || seals?.nicSerialNumber || '').trim();
-      const effectiveMeterNic = String(meterNic || '').trim();
+      const effectiveScannedNic = String(
+        scanned_nic ||
+        seals?.nicSerialNumber ||
+        seals?.nic_sn ||
+        seals?.nicSerial ||
+        seals?.nic_serial_no ||
+        ''
+      ).trim();
+      const effectiveMeterNic = String(meterNic || meterData.nicSrNo || '').trim();
 
       // Check match:
       const isNicMatched = Boolean(
@@ -201,7 +221,7 @@ const Stage08Controller = {
         : `NIC SN Mismatch! Scanned NIC '${effectiveScannedNic}' does not match Meter NIC '${effectiveMeterNic}'.`;
 
       return res.status(200).json({
-        success: false,
+        success: true,
         matched: false,
         status: 'FAIL',
         db: 'NOT SAVED',
@@ -210,19 +230,25 @@ const Stage08Controller = {
           ...meterData,
           serialNo,
           imeiNo,
-          nicSrNo: effectiveMeterNic,
+          nicSrNo: effectiveMeterNic || 'NOT DETECTED',
           uid
         },
         savedRecord: { uid, serialNo },
         message: mismatchReason
       });
     } catch (err) {
-      return res.status(400).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
         matched: false,
         status: 'FAIL',
         db: 'NOT SAVED',
         result: 'FAILED',
+        meterData: {
+          serialNo: '',
+          imeiNo: '',
+          nicSrNo: '',
+          uid: ''
+        },
         message: err.message || 'Error communicating with optical probe.'
       });
     }

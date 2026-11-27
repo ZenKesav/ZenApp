@@ -10,6 +10,9 @@ import Modal from '../../../components/common/Modal/Modal';
 import { Pagination } from '../../../components/CommonComponents';
 import webSerialService from '../../../services/common/webSerialService';
 import laserWebSerialService from '../../../services/common/laserWebSerialService';
+import hardwarePortLockService, { extractPortIdentifier } from '../../../services/common/hardwarePortLockService';
+import unifiedHardwarePortManager from '../../../services/common/unifiedHardwarePortManager';
+import HardwarePortModal from '../../../components/common/hardware/HardwarePortModal';
 
 // Default clean configurations without hardcoded mock data
 const DEFAULT_PRINT_SPECS = {
@@ -481,219 +484,166 @@ export default function MeterBodyPrintConsole({
     });
   };
 
-  // Unified options for Optical Port combining Server detected ports and browser WebSerial ports
-  const opticalPortOptions = useMemo(() => {
-    const list = [];
-    const seen = new Set();
-    const laserKey = laserStatus.connected && laserStatus.port ? extractPortKey(laserStatus.port) : null;
+  const [activePortLocks, setActivePortLocks] = useState(() => hardwarePortLockService.getStoredLocks());
 
-    (availableOpticalPorts || [])
-      .filter(p => !isDummyPortName(p.friendlyName || p.path))
-      .forEach(p => {
-        const pKey = extractPortKey(p.path);
-        const isTaken = Boolean(laserKey && pKey === laserKey);
-        seen.add(pKey);
-        seen.add(p.path.toUpperCase());
-        list.push({
-          id: `server_${p.path}`,
-          value: p.path,
-          type: 'server',
-          label: p.friendlyName || (p.path ? `USB Serial Port (${p.path})` : p.path),
-          isTaken,
-          takenMsg: isTaken ? ' (In use by Laser Port)' : ''
-        });
-      });
+  useEffect(() => {
+    setActivePortLocks(hardwarePortLockService.getStoredLocks());
+    return hardwarePortLockService.subscribe((locks) => {
+      setActivePortLocks({ ...locks });
+    });
+  }, []);
 
-    (pairedPorts || [])
-      .filter(p => !isDummyPortName(p.friendlyName))
-      .forEach((p, idx) => {
-        const pKey = extractPortKey(p.friendlyName);
-        if (list.length > 0 && (!pKey || seen.has(pKey) || p.friendlyName.toLowerCase() === 'usb serial port')) {
-          return;
-        }
-        if (pKey) seen.add(pKey);
-        const isTaken = Boolean(
-          p.isUsedByLaser ||
-          (laserWebSerialService?.port && laserWebSerialService.port === p.port && laserWebSerialService.connected) ||
-          (p.port && p.port.readable !== null && webSerialService?.port !== p.port)
-        );
-        list.push({
-          id: `paired_${idx}`,
-          value: p.friendlyName,
-          type: 'webserial',
-          portObj: p.port,
-          label: p.friendlyName,
-          isTaken,
-          takenMsg: isTaken ? ' (In use by Laser Port)' : ''
-        });
-      });
+  // Unified options for Optical and Laser Ports using local Device Manager ports
+  const [opticalPortOptions, setOpticalPortOptions] = useState([]);
+  const [laserPortOptions, setLaserPortOptions] = useState([]);
 
-    return list;
-  }, [availableOpticalPorts, pairedPorts, laserStatus.connected, laserStatus.port]);
+  const refreshHardwarePortOptions = async () => {
+    try {
+      const optList = await unifiedHardwarePortManager.getAvailablePorts('optical', 9, laserStatus.connected ? laserStatus.port : null, opticalStatus.connected ? opticalStatus.port : null);
+      setOpticalPortOptions(optList);
+      const lasList = await unifiedHardwarePortManager.getAvailablePorts('laser', 9, opticalStatus.connected ? opticalStatus.port : null, laserStatus.connected ? laserStatus.port : null);
+      setLaserPortOptions(lasList);
+    } catch (_) { }
+  };
 
-  // Unified options for Laser Port combining Server detected ports and browser WebSerial ports
-  const laserPortOptions = useMemo(() => {
-    const list = [];
-    const seen = new Set();
-    const usbKey = opticalStatus.connected && opticalStatus.port ? extractPortKey(opticalStatus.port) : null;
-
-    (availableLaserPorts || [])
-      .filter(p => !isDummyPortName(p.friendlyName || p.path))
-      .forEach(p => {
-        const pKey = extractPortKey(p.path);
-        const isTaken = Boolean(usbKey && pKey === usbKey);
-        seen.add(pKey);
-        seen.add(p.path.toUpperCase());
-        list.push({
-          id: `laser_server_${p.path}`,
-          value: p.path,
-          type: 'server',
-          label: p.friendlyName || (p.path ? `USB Serial Port (${p.path})` : p.path),
-          isTaken,
-          takenMsg: isTaken ? ' (In use by Optical Port)' : ''
-        });
-      });
-
-    (pairedLaserPorts || [])
-      .filter(p => !isDummyPortName(p.friendlyName))
-      .forEach((p, idx) => {
-        const pKey = extractPortKey(p.friendlyName);
-        if (list.length > 0 && (!pKey || seen.has(pKey) || p.friendlyName.toLowerCase() === 'usb serial port')) {
-          return;
-        }
-        if (pKey) seen.add(pKey);
-        const isTaken = Boolean(
-          p.isUsedByOptical ||
-          (webSerialService?.port && webSerialService.port === p.port && webSerialService.connected) ||
-          (p.port && p.port.readable !== null && laserWebSerialService?.port !== p.port)
-        );
-        list.push({
-          id: `laser_paired_${idx}`,
-          value: p.friendlyName,
-          type: 'webserial',
-          portObj: p.port,
-          label: p.friendlyName,
-          isTaken,
-          takenMsg: isTaken ? ' (In use by Optical Port)' : ''
-        });
-      });
-
-    return list;
-  }, [availableLaserPorts, pairedLaserPorts, opticalStatus.connected, opticalStatus.port]);
+  useEffect(() => {
+    refreshHardwarePortOptions();
+    const unsub = unifiedHardwarePortManager.setupHardwareListeners(() => {
+      refreshHardwarePortOptions();
+    });
+    return () => unsub();
+  }, [opticalStatus.connected, opticalStatus.port, laserStatus.connected, laserStatus.port, activePortLocks]);
 
   // Keep Optical dropdown selection pointing to a valid detected port when disconnected
   useEffect(() => {
     if (opticalStatus.connected) return;
     const valid = opticalPortOptions.filter(o => !o.isTaken);
-    const currentMatches = valid.some(o => o.id === selectedPortId);
-    if (!currentMatches && selectedPortId !== '__pair_new__') {
-      if (valid.length > 0) {
-        setSelectedPortId(valid[0].id);
-        setSelectedOpticalPort(valid[0].value);
-      } else {
-        setSelectedPortId('');
-        setSelectedOpticalPort('');
-      }
+    const currentMatches = valid.some(o => o.value === selectedOpticalPort);
+    if (!currentMatches && valid.length > 0) {
+      setSelectedOpticalPort(valid[0].value);
+      setSelectedPortId(valid[0].value);
+    } else if (valid.length === 0) {
+      setSelectedOpticalPort('');
+      setSelectedPortId('');
     }
-  }, [opticalPortOptions, selectedPortId, opticalStatus.connected]);
+  }, [opticalPortOptions, selectedOpticalPort, opticalStatus.connected]);
 
   // Keep Laser dropdown selection pointing to a valid detected port when disconnected
   useEffect(() => {
     if (laserStatus.connected) return;
     const valid = laserPortOptions.filter(o => !o.isTaken);
-    const currentMatches = valid.some(o => o.id === selectedLaserPortId);
-    if (!currentMatches && selectedLaserPortId !== '__laser_pair_new__') {
-      if (valid.length > 0) {
-        setSelectedLaserPortId(valid[0].id);
-        setSelectedLaserPort(valid[0].value);
-      } else {
-        setSelectedLaserPortId('');
-        setSelectedLaserPort('');
-      }
+    const currentMatches = valid.some(o => o.value === selectedLaserPort);
+    if (!currentMatches && valid.length > 0) {
+      setSelectedLaserPort(valid[0].value);
+      setSelectedLaserPortId(valid[0].value);
+    } else if (valid.length === 0) {
+      setSelectedLaserPort('');
+      setSelectedLaserPortId('');
     }
-  }, [laserPortOptions, selectedLaserPortId, laserStatus.connected]);
+  }, [laserPortOptions, selectedLaserPort, laserStatus.connected]);
 
   // Direct connect handler for Optical Port
   const handleDirectConnectOptical = async () => {
     if (opticalStatus.checking) return;
-    if (selectedPortId && selectedPortId.startsWith('server_')) {
-      const path = selectedPortId.replace('server_', '');
-      const targetKey = extractPortKey(path);
-      if (laserStatus.connected && laserStatus.port && extractPortKey(laserStatus.port) === targetKey) {
-        showErrorAlert(
-          'Port Already in Use',
-          `COM port ${targetKey} is already connected to Laser Port. Please select a different COM port for Optical Port.`
-        );
+    const targetPort = selectedOpticalPort || (opticalPortOptions.find(o => !o.isTaken)?.value);
+    if (!targetPort) {
+      if (!unifiedHardwarePortManager.isServerMachine()) {
+        try {
+          const paired = await unifiedHardwarePortManager.pairNewPort('optical');
+          if (paired) {
+            setSelectedOpticalPort(paired.friendlyName);
+            setSelectedPortId(paired.friendlyName);
+            await refreshHardwarePortOptions();
+            return await handleDirectConnectOptical();
+          }
+        } catch (e) {
+          if (e.name !== 'NotFoundError') {
+            showErrorAlert('Port Pair Notice', e.message);
+          }
+        }
         return;
       }
-      await handleConnectServerPort(path);
-    } else if (selectedPortId && selectedPortId.startsWith('paired_')) {
-      const idx = parseInt(selectedPortId.replace('paired_', ''), 10);
-      const target = pairedPorts[idx];
-      if (target && target.port) {
-        if (target.isUsedByLaser || (target.port.readable !== null && webSerialService.port !== target.port)) {
-          handleConnectCable(null, true);
-        } else {
-          handleConnectCable(target.port, false);
-        }
-      } else {
-        handleConnectCable(null, true);
-      }
-    } else if (opticalPortOptions.length > 0) {
-      const firstFree = opticalPortOptions.find(o => !o.isTaken);
-      if (firstFree) {
-        if (firstFree.type === 'server') {
-          await handleConnectServerPort(firstFree.value);
-        } else if (firstFree.portObj) {
-          await handleConnectCable(firstFree.portObj, false);
-        }
-      } else {
-        handleConnectCable(null, true);
-      }
-    } else {
-      handleConnectCable(null, true);
+      showErrorAlert('No Port Selected', 'Please select a COM port from the dropdown.');
+      return;
+    }
+    setOpticalStatus(prev => ({ ...prev, checking: true }));
+    try {
+      const res = await unifiedHardwarePortManager.connectPort({
+        role: 'optical',
+        portName: targetPort,
+        stageId: 9,
+        stageName: 'Stage 9',
+        portType: 'Optical Port',
+        config: usbSerialConfig,
+        operatorId: currentOperatorId
+      });
+      setSelectedOpticalPort(res.portName);
+      setSelectedPortId(res.portName);
+      setOpticalStatus({
+        connected: true,
+        port: res.portName,
+        friendlyName: res.portName,
+        baudRate: usbSerialConfig.baudRate,
+        ports: opticalPortOptions,
+        source: res.source || (res.tunnelId ? 'client_webserial' : 'server'),
+        tunnelId: res.tunnelId || null,
+        checking: false
+      });
+      setShowUsbSettings(false);
+    } catch (err) {
+      setOpticalStatus(prev => ({ ...prev, connected: false, checking: false }));
+      showErrorAlert('Optical Port Connection Failed', err.message);
     }
   };
 
   // Direct connect handler for Laser Port
   const handleDirectConnectLaser = async () => {
     if (laserStatus.checking) return;
-    if (selectedLaserPortId && selectedLaserPortId.startsWith('laser_server_')) {
-      const path = selectedLaserPortId.replace('laser_server_', '');
-      const targetKey = extractPortKey(path);
-      if (opticalStatus.connected && opticalStatus.port && extractPortKey(opticalStatus.port) === targetKey) {
-        showErrorAlert(
-          'Port Already in Use',
-          `COM port ${targetKey} is already connected to Optical Port. Please select a different COM port for Laser Port.`
-        );
+    const targetPort = selectedLaserPort || (laserPortOptions.find(o => !o.isTaken)?.value);
+    if (!targetPort) {
+      if (!unifiedHardwarePortManager.isServerMachine()) {
+        try {
+          const paired = await unifiedHardwarePortManager.pairNewPort('laser');
+          if (paired) {
+            setSelectedLaserPort(paired.friendlyName);
+            setSelectedLaserPortId(paired.friendlyName);
+            await refreshHardwarePortOptions();
+            return await handleDirectConnectLaser();
+          }
+        } catch (e) {
+          if (e.name !== 'NotFoundError') {
+            showErrorAlert('Port Pair Notice', e.message);
+          }
+        }
         return;
       }
-      await handleConnectServerLaserPort(path);
-    } else if (selectedLaserPortId && selectedLaserPortId.startsWith('laser_paired_')) {
-      const idx = parseInt(selectedLaserPortId.replace('laser_paired_', ''), 10);
-      const target = pairedLaserPorts[idx];
-      if (target && target.port) {
-        if (target.isUsedByOptical || (target.port.readable !== null && laserWebSerialService.port !== target.port)) {
-          handleConnectLaser(null, true);
-        } else {
-          handleConnectLaser(target.port, false);
-        }
-      } else {
-        handleConnectLaser(null, true);
-      }
-    } else if (laserPortOptions.length > 0) {
-      const firstFree = laserPortOptions.find(o => !o.isTaken);
-      if (firstFree) {
-        if (firstFree.type === 'server') {
-          await handleConnectServerLaserPort(firstFree.value);
-        } else if (firstFree.portObj) {
-          await handleConnectLaser(firstFree.portObj, false);
-        }
-      } else {
-        handleConnectLaser(null, true);
-      }
-    } else {
-      handleConnectLaser(null, true);
+      showErrorAlert('No Port Selected', 'Please select a COM port from the dropdown.');
+      return;
+    }
+    setLaserStatus(prev => ({ ...prev, checking: true }));
+    try {
+      const res = await unifiedHardwarePortManager.connectPort({
+        role: 'laser',
+        portName: targetPort,
+        stageId: 9,
+        stageName: 'Stage 9',
+        portType: 'Laser Port',
+        config: laserSerialConfig
+      });
+      setSelectedLaserPort(res.portName);
+      setSelectedLaserPortId(res.portName);
+      setLaserStatus({
+        connected: true,
+        port: res.portName,
+        friendlyName: res.portName,
+        baudRate: laserSerialConfig.baudRate,
+        source: res.source || 'client_webserial',
+        checking: false
+      });
+      setShowLaserSettings(false);
+    } catch (err) {
+      setLaserStatus(prev => ({ ...prev, connected: false, checking: false }));
+      showErrorAlert('Laser Port Connection Failed', err.message);
     }
   };
 
@@ -1153,7 +1103,13 @@ export default function MeterBodyPrintConsole({
   const handleConnectLaser = async (targetPortInstance = null, forceNewChooser = false) => {
     setLaserStatus(prev => ({ ...prev, checking: true }));
     try {
-      const eff = getEffectiveSerialConfig(laserSerialConfig);
+      const eff = {
+        ...getEffectiveSerialConfig(laserSerialConfig),
+        stageId: 9,
+        stageName: 'Stage 9',
+        portType: 'Laser Port',
+        comPortLabel: selectedLaserPort || laserSerialConfig?.comPortLabel || ''
+      };
       let res = null;
       if (forceNewChooser) {
         res = await laserWebSerialService.requestPortAndConnect(eff);
@@ -1368,7 +1324,13 @@ export default function MeterBodyPrintConsole({
     // 1. Try local laptop Web Serial if supported natively (e.g. Chrome flag set or HTTPS)
     if (webSerialService.hasNativeSerial()) {
       try {
-        const eff = getEffectiveSerialConfig(usbSerialConfig);
+        const eff = {
+          ...getEffectiveSerialConfig(usbSerialConfig),
+          stageId: 9,
+          stageName: 'Stage 9',
+          portType: 'Optical Port',
+          comPortLabel: selectedOpticalPort || usbSerialConfig?.comPortLabel || ''
+        };
         let res = null;
         if (forceNewChooser) {
           res = await webSerialService.requestPortAndConnect(currentOperatorId, eff);
@@ -2539,358 +2501,60 @@ export default function MeterBodyPrintConsole({
 
     // 3. Scan available ports on mount (Preserve connections across reload unless manually disconnected)
     const initSerial = async () => {
-      // Check paired Web Serial ports on this laptop (filtering out any dummy ports)
-      const pairedList = await refreshPairedPorts();
-      const pairedLaserList = await refreshPairedLaserPorts();
-
-      // Check if USB Port was connected before reload and not manually disconnected
-      let wasOpticalConnected = false;
-      let opticalManualDisconnect = false;
-      let lastOpticalPort = null;
-      let lastOpticalSource = 'client_webserial';
+      // 1. Restore Optical Port on Mount / Reload
       try {
-        wasOpticalConnected = localStorage.getItem('zenmeter_optical_was_connected') === 'true';
-        opticalManualDisconnect = localStorage.getItem('zenmeter_optical_manual_disconnect') === 'true';
-        lastOpticalPort = localStorage.getItem('zenmeter_optical_last_port');
-        lastOpticalSource = localStorage.getItem('zenmeter_optical_source') || 'client_webserial';
-        if (lastOpticalPort && isDummyPortName(lastOpticalPort)) {
-          lastOpticalPort = null;
-        }
-      } catch (_) { }
-
-      manualDisconnectedRef.current = opticalManualDisconnect;
-
-      // Query server status
-      let detectedServerPorts = [];
-      let isServer = false;
-      let optStatusRes = null;
-      try {
-        optStatusRes = await stage09Service.getOpticalStatus({
-          deviceId: webSerialService.deviceId,
-          tunnelId: opticalStatusRef.current?.tunnelId || ''
+        const optRestore = await unifiedHardwarePortManager.restorePortOnMount({
+          role: 'optical',
+          stageId: 9,
+          stageName: 'Stage 9',
+          portType: 'Optical Port',
+          config: usbSerialConfig,
+          operatorId: currentOperatorId
         });
-        if (optStatusRes?.isServerMachine !== undefined) {
-          isServer = optStatusRes.isServerMachine;
-          if (isMounted) setIsServerMachine(optStatusRes.isServerMachine);
-        }
-
-        detectedServerPorts = (optStatusRes && Array.isArray(optStatusRes.ports))
-          ? optStatusRes.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
-          : [];
-      } catch (e) {
-        console.warn('[Serial] Port scan error on mount:', e.message);
-      }
-
-      const eff = getEffectiveSerialConfig(usbSerialConfig);
-      const summary = formatSerialSummary(usbSerialConfig);
-
-      if (!isServer) {
-        // REMOTE WORKSTATION / LAPTOP:
-        // Exclusively use ports physically connected to THIS laptop's Device Manager via Web Serial!
-        // Never connect to or show server COM ports on other client machines!
-        if (isMounted) setAvailableOpticalPorts([]);
-
-        let webSerialConnected = false;
-        const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || lastOpticalSource === 'client_webserial');
-
-        if (shouldConnectOptical && webSerialService.hasNativeSerial() && pairedList.length > 0) {
-          const matchedPort = lastOpticalPort
-            ? pairedList.find(p => p.friendlyName === lastOpticalPort || extractPortKey(p.friendlyName) === extractPortKey(lastOpticalPort))
-            : null;
-          const freePort = matchedPort || pairedList.find(p => !p.isUsedByLaser && (!laserWebSerialService?.port || laserWebSerialService.port !== p.port) && (!p.port.readable || webSerialService.port === p.port)) || pairedList[0];
-
-          if (freePort && freePort.port) {
-            try {
-              const res = await webSerialService.connectPort(freePort.port, currentOperatorId, eff);
-              if (res && res.success && isMounted) {
-                const refreshed = await refreshPairedPorts();
-                const newIdx = (refreshed || []).findIndex(p => p.port === webSerialService.port);
-                setSelectedPortId(newIdx >= 0 ? `paired_${newIdx}` : 'paired_0');
-                setSelectedOpticalPort(res.portName);
-                setOpticalStatus({
-                  connected: true,
-                  port: res.portName,
-                  friendlyName: `${res.portName} (${summary})`,
-                  baudRate: eff.baudRate,
-                  ports: refreshed,
-                  source: 'client_webserial',
-                  tunnelId: res.tunnelId,
-                  deviceId: webSerialService.deviceId,
-                  checking: false
-                });
-                webSerialConnected = true;
-                try {
-                  localStorage.setItem('zenmeter_optical_was_connected', 'true');
-                  localStorage.setItem('zenmeter_optical_last_port', res.portName);
-                  localStorage.setItem('zenmeter_optical_source', 'client_webserial');
-                  localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
-                } catch (_) { }
-              }
-            } catch (autoErr) {
-              console.warn('[Stage09] Optical WebSerial auto-reconnect failed on reload:', autoErr.message);
-            }
-          }
-        }
-
-        if (!webSerialConnected && isMounted) {
+        if (optRestore && isMounted) {
+          setSelectedOpticalPort(optRestore.portName);
+          setSelectedPortId(optRestore.portName);
           setOpticalStatus({
-            connected: false,
-            port: null,
-            friendlyName: null,
-            baudRate: eff.baudRate,
-            ports: pairedList,
+            connected: true,
+            port: optRestore.portName,
+            friendlyName: optRestore.portName,
+            baudRate: usbSerialConfig.baudRate,
+            ports: await unifiedHardwarePortManager.getAvailablePorts('optical', 9, null, optRestore.portName),
             source: 'client_webserial',
-            tunnelId: null,
+            tunnelId: optRestore.tunnelId,
             deviceId: webSerialService.deviceId,
             checking: false
           });
-          try { localStorage.setItem('zenmeter_optical_was_connected', 'false'); } catch (_) { }
-
-          if (pairedList.length > 0) {
-            setSelectedPortId('paired_0');
-            setSelectedOpticalPort(pairedList[0].friendlyName);
-          } else {
-            setSelectedPortId('__pair_new__');
-            setSelectedOpticalPort('');
-          }
         }
-      } else {
-        // SERVER MACHINE:
-        if (isMounted && detectedServerPorts.length > 0) {
-          setAvailableOpticalPorts(detectedServerPorts);
-        }
+      } catch (optErr) {
+        console.warn('[Stage09] Optical auto-reconnect note:', optErr.message);
+      }
 
-        // Check if backend already has active Optical connection
-        const isBackendOpticalOpen = Boolean(optStatusRes && optStatusRes.connected && optStatusRes.port);
-        const targetOptKey = lastOpticalPort ? extractPortKey(lastOpticalPort).toLowerCase() : '';
-        const optIsPhysicallyPresent = Boolean(targetOptKey && detectedServerPorts.some(p => extractPortKey(p.path).toLowerCase() === targetOptKey || extractPortKey(p.friendlyName || '').toLowerCase() === targetOptKey));
-        const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || Boolean(lastOpticalPort));
-
-        if (isBackendOpticalOpen && isMounted) {
-          // 1. Backend already connected -> restore connection immediately without dropping or moving location
-          const activePort = optStatusRes.port ? (extractPortKey(optStatusRes.port) || optStatusRes.port) : (lastOpticalPort || 'COM4');
-          setOpticalStatus({
+      // 2. Restore Laser Port on Mount / Reload
+      try {
+        const lasRestore = await unifiedHardwarePortManager.restorePortOnMount({
+          role: 'laser',
+          stageId: 9,
+          stageName: 'Stage 9',
+          portType: 'Laser Port',
+          config: laserSerialConfig
+        });
+        if (lasRestore && isMounted) {
+          setSelectedLaserPort(lasRestore.portName);
+          setSelectedLaserPortId(lasRestore.portName);
+          setLaserStatus({
             connected: true,
-            port: activePort,
-            friendlyName: optStatusRes.friendlyName || `${activePort} (${summary})`,
-            baudRate: optStatusRes.baudRate || 9600,
-            ports: detectedServerPorts,
-            source: 'server',
-            tunnelId: null,
+            port: lasRestore.portName,
+            friendlyName: lasRestore.portName,
+            baudRate: laserSerialConfig.baudRate,
             checking: false
           });
-          setSelectedOpticalPort(activePort);
-          setSelectedPortId(`server_${activePort}`);
-          try {
-            localStorage.setItem('zenmeter_optical_was_connected', 'true');
-            localStorage.setItem('zenmeter_optical_last_port', activePort);
-            localStorage.setItem('zenmeter_optical_source', 'server');
-            localStorage.setItem('zenmeter_optical_manual_disconnect', 'false');
-          } catch (_) { }
-        } else if (shouldConnectOptical && isMounted) {
-          // 2. Reconnect to same port if physically present
-          if (lastOpticalPort && optIsPhysicallyPresent && detectedServerPorts.length > 0) {
-            await handleConnectServerPort(lastOpticalPort, true);
-          } else {
-            setOpticalStatus(prev => ({ ...prev, connected: false, port: null, friendlyName: null, checking: false }));
-            try { localStorage.setItem('zenmeter_optical_was_connected', 'false'); } catch (_) { }
-            if (detectedServerPorts.length > 0) {
-              setSelectedPortId(`server_${detectedServerPorts[0].path}`);
-              setSelectedOpticalPort(detectedServerPorts[0].path);
-            }
-          }
-        } else if (isMounted) {
-          // 3. Keep selected location locked to last saved port or first detected port
-          setOpticalStatus(prev => ({
-            ...prev,
-            connected: false,
-            ports: detectedServerPorts,
-            checking: false
-          }));
-
-          if (detectedServerPorts.length > 0) {
-            let savedPort = lastOpticalPort && !isDummyPortName(lastOpticalPort) ? lastOpticalPort : null;
-            const matchedPort = savedPort && detectedServerPorts.find(p => p.path && p.path.toLowerCase() === savedPort.toLowerCase());
-            const targetPort = matchedPort ? matchedPort.path : detectedServerPorts[0].path;
-            if (targetPort) {
-              setSelectedPortId(`server_${targetPort}`);
-              setSelectedOpticalPort(targetPort);
-            }
-          }
         }
+      } catch (lasErr) {
+        console.warn('[Stage09] Laser auto-reconnect note:', lasErr.message);
       }
 
-      // Check if Laser Port was connected before reload and not manually disconnected
-      let wasLaserConnected = false;
-      let laserManualDisconnect = false;
-      let lastLaserPort = null;
-      let lastLaserSource = 'server';
-      try {
-        wasLaserConnected = localStorage.getItem('zenmeter_laser_was_connected') === 'true';
-        laserManualDisconnect = localStorage.getItem('zenmeter_laser_manual_disconnect') === 'true';
-        lastLaserPort = localStorage.getItem('zenmeter_laser_last_port');
-        lastLaserSource = localStorage.getItem('zenmeter_laser_source') || 'server';
-        if (lastLaserPort && isDummyPortName(lastLaserPort)) {
-          lastLaserPort = null;
-        }
-      } catch (_) { }
-
-      try {
-        const laserStatusRes = await stage09Service.getLaserStatus({
-          deviceId: webSerialService.deviceId,
-          tunnelId: opticalStatusRef.current?.tunnelId || ''
-        });
-
-        if (laserStatusRes?.isServerMachine !== undefined) {
-          isServer = laserStatusRes.isServerMachine;
-          if (isMounted) setIsServerMachine(laserStatusRes.isServerMachine);
-        }
-
-        const detLaserPorts = (laserStatusRes && Array.isArray(laserStatusRes.ports))
-          ? laserStatusRes.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
-          : [];
-
-        if (isServer) {
-          if (isMounted) {
-            setAvailableLaserPorts(detLaserPorts);
-          }
-
-          // Prevent port conflict on reload: if both USB and Laser were saved with the same COM port
-          if (lastOpticalPort && lastLaserPort && extractPortKey(lastLaserPort) === extractPortKey(lastOpticalPort)) {
-            const altPort = detLaserPorts.find(p => extractPortKey(p.path) !== extractPortKey(lastOpticalPort));
-            if (altPort) {
-              lastLaserPort = altPort.path;
-              try { localStorage.setItem('zenmeter_laser_last_port', altPort.path); } catch (_) { }
-            } else {
-              wasLaserConnected = false;
-              lastLaserPort = null;
-            }
-          }
-
-          const isBackendLaserOpen = Boolean(laserStatusRes && laserStatusRes.connected);
-          const rawPort = lastLaserPort || laserStatusRes?.port || (detLaserPorts.length > 0 ? detLaserPorts[0].path : '');
-          const targetLaserPort = rawPort ? (extractPortKey(rawPort) || rawPort) : '';
-          const targetLaserKey = targetLaserPort ? extractPortKey(targetLaserPort).toLowerCase() : '';
-          const portIsPhysicallyPresent = Boolean(targetLaserKey && detLaserPorts.some(p => extractPortKey(p.path).toLowerCase() === targetLaserKey || extractPortKey(p.friendlyName || '').toLowerCase() === targetLaserKey));
-          const shouldConnectLaser = !laserManualDisconnect && portIsPhysicallyPresent && detLaserPorts.length > 0 && (wasLaserConnected || isBackendLaserOpen);
-
-          if (shouldConnectLaser && isMounted) {
-            if (isBackendLaserOpen) {
-              const summary = formatSerialSummary(laserSerialConfig);
-              const activePort = laserStatusRes.port ? (extractPortKey(laserStatusRes.port) || laserStatusRes.port) : targetLaserPort;
-              setLaserStatus({
-                connected: true,
-                port: activePort,
-                friendlyName: `Laser COM (${activePort}) (${summary})`,
-                baudRate: 9600,
-                source: 'server',
-                ports: detLaserPorts,
-                checking: false
-              });
-              setSelectedLaserPort(activePort);
-              setSelectedLaserPortId(`laser_server_${activePort}`);
-              try {
-                localStorage.setItem('zenmeter_laser_was_connected', 'true');
-                localStorage.setItem('zenmeter_laser_last_port', activePort);
-                localStorage.setItem('zenmeter_laser_source', 'server');
-                localStorage.setItem('zenmeter_laser_manual_disconnect', 'false');
-              } catch (_) { }
-            } else {
-              const cleanTarget = extractPortKey(targetLaserPort) || targetLaserPort;
-              const eff = getEffectiveSerialConfig(laserSerialConfig);
-              const lRes = await stage09Service.connectLaserPort({
-                port: cleanTarget,
-                baudRate: eff.baudRate,
-                dataBits: eff.dataBits,
-                parity: eff.parity,
-                stopBits: eff.stopBits,
-                parityErrorChar: eff.parityErrorChar,
-                deviceId: webSerialService.deviceId,
-                tunnelId: opticalStatusRef.current?.tunnelId || ''
-              });
-              if (lRes && (lRes.success || lRes.connected) && isMounted) {
-                const summary = formatSerialSummary(laserSerialConfig);
-                const connectedPort = lRes.port ? (extractPortKey(lRes.port) || lRes.port) : cleanTarget;
-                setLaserStatus(prev => ({
-                  ...prev,
-                  connected: true,
-                  port: connectedPort,
-                  friendlyName: `Laser COM (${connectedPort}) (${summary})`,
-                  checking: false
-                }));
-                setSelectedLaserPort(connectedPort);
-                setSelectedLaserPortId(`laser_server_${connectedPort}`);
-                try {
-                  localStorage.setItem('zenmeter_laser_was_connected', 'true');
-                  localStorage.setItem('zenmeter_laser_last_port', connectedPort);
-                  localStorage.setItem('zenmeter_laser_source', 'server');
-                  localStorage.setItem('zenmeter_laser_manual_disconnect', 'false');
-                } catch (_) { }
-              } else if (isMounted) {
-                setLaserStatus(prev => ({ ...prev, connected: false, port: null, friendlyName: null, checking: false }));
-                try { localStorage.setItem('zenmeter_laser_was_connected', 'false'); } catch (_) { }
-              }
-            }
-          } else if (isMounted) {
-            setLaserStatus(prev => ({ ...prev, connected: false, port: null, friendlyName: null, checking: false }));
-            try { localStorage.setItem('zenmeter_laser_was_connected', 'false'); } catch (_) { }
-            if (detLaserPorts.length > 0) {
-              const savedLaser = lastLaserPort && detLaserPorts.find(p => p.path && p.path.toLowerCase() === lastLaserPort.toLowerCase());
-              const targetLaser = savedLaser ? savedLaser.path : detLaserPorts[0].path;
-              setSelectedLaserPortId(`laser_server_${targetLaser}`);
-              setSelectedLaserPort(targetLaser);
-            }
-          }
-        } else if (isMounted) {
-          // Remote laptop: hide server ports!
-          setAvailableLaserPorts([]);
-          setLaserStatus(prev => ({
-            ...prev,
-            connected: false,
-            ports: pairedLaserList,
-            checking: false
-          }));
-
-          if (pairedLaserList && pairedLaserList.length > 0) {
-            const freeLaser = pairedLaserList.find(p => !p.isUsedByOptical && (!webSerialService?.port || webSerialService.port !== p.port));
-            if (freeLaser) {
-              const freeIdx = pairedLaserList.indexOf(freeLaser);
-              setSelectedLaserPortId(`laser_paired_${freeIdx}`);
-              setSelectedLaserPort(freeLaser.friendlyName);
-
-              if (!laserManualDisconnect && (wasLaserConnected || lastLaserSource === 'client_webserial')) {
-                try {
-                  const eff = getEffectiveSerialConfig(laserSerialConfig);
-                  const res = await laserWebSerialService.connectPort(freeLaser.port, eff);
-                  if (res && res.success && isMounted) {
-                    const summary = formatSerialSummary(laserSerialConfig);
-                    setLaserStatus({
-                      connected: true,
-                      port: res.portName,
-                      friendlyName: `${res.portName} (${summary})`,
-                      baudRate: eff.baudRate,
-                      source: 'client_webserial',
-                      ports: pairedLaserList,
-                      checking: false
-                    });
-                    setSelectedLaserPort(res.portName);
-                  }
-                } catch (webErr) {
-                  console.warn('[LaserWebSerial] Reconnection error on reload:', webErr);
-                }
-              }
-            } else {
-              setSelectedLaserPortId('__laser_pair_new__');
-              setSelectedLaserPort('');
-            }
-          } else {
-            setSelectedLaserPortId('__laser_pair_new__');
-            setSelectedLaserPort('');
-          }
-        }
-      } catch (e) {
-        console.warn('[Serial] Laser port scan error on mount:', e.message);
-      }
+      await refreshHardwarePortOptions();
     };
 
     initSerial();
@@ -4801,195 +4465,67 @@ export default function MeterBodyPrintConsole({
         </form>
       </Modal>
 
-      {/* Modal Popup: Optical Port COM Settings */}
-      <Modal
+      {/* Modal Popup: Optical Port COM Settings (Image 2) */}
+      <HardwarePortModal
         isOpen={showUsbSettings}
         onClose={() => setShowUsbSettings(false)}
-        maxWidth="500px"
-        title={
-          <div className="d-flex align-items-center gap-2">
-            <i className="ti ti-adjustments text-danger fs-5"></i>
-            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
-              Optical Port - COM Port Settings
-            </span>
-          </div>
-        }
-      >
-        <ComPortSettingsPanel
-          title="OPTICAL PORT - COM PORT SETTINGS"
-          config={usbSerialConfig}
-          onChange={updateUsbConfig}
-          onClose={() => setShowUsbSettings(false)}
-          showHeader={false}
-          commChannelContent={
-            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-              <div className="input-group input-group-sm flex-grow-1">
-                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                  <i className="ti ti-plug" style={{ fontSize: '12px' }}></i>
-                </span>
-                <select
-                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                  style={{ height: '34px', fontSize: '12px' }}
-                  value={selectedPortId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '__pair_new__') {
-                      setSelectedPortId('__pair_new__');
-                      handleConnectCable(null, true);
-                      return;
-                    }
-                    setSelectedPortId(val);
-                    if (val && val.startsWith('paired_')) {
-                      const idx = parseInt(val.replace('paired_', ''), 10);
-                      if (pairedPorts[idx]) {
-                        setSelectedOpticalPort(pairedPorts[idx].friendlyName);
-                      }
-                    } else if (val && val.startsWith('server_')) {
-                      setSelectedOpticalPort(val.replace('server_', ''));
-                    }
-                  }}
-                  disabled={opticalStatus.checking || opticalStatus.connected}
-                >
-                  <option value="" disabled>Select / Connect USB Port...</option>
-                  {opticalPortOptions.length > 0 ? (
-                    opticalPortOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
-                        {opt.label}{opt.takenMsg}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No COM Port Detected</option>
-                  )}
-                  <option value="__pair_new__">
-                    Select / Pair COM Port from Device Manager...
-                  </option>
-                </select>
-              </div>
-
-              {!opticalStatus.connected ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                  onClick={handleDirectConnectOptical}
-                  disabled={opticalStatus.checking}
-                  title="Connect Optical USB Port"
-                >
-                  <i className={`ti ${opticalStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
-                  <span>{opticalStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                  onClick={handleToggleOpticalConnection}
-                  disabled={opticalStatus.checking}
-                  title={`Disconnect (${opticalStatus.friendlyName || opticalStatus.port || 'USB Port'})`}
-                >
-                  <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
-                  <span>Disconnect</span>
-                </button>
-              )}
-            </div>
+        title="Optical Port"
+        connected={opticalStatus.connected}
+        checking={opticalStatus.checking}
+        portOptions={opticalPortOptions}
+        selectedPort={selectedOpticalPort}
+        onSelectPort={(val) => {
+          setSelectedOpticalPort(val);
+          setSelectedPortId(val);
+        }}
+        onPairNewPort={async () => {
+          try {
+            const paired = await unifiedHardwarePortManager.pairNewPort('optical');
+            if (paired) {
+              setSelectedOpticalPort(paired.friendlyName);
+              setSelectedPortId(paired.friendlyName);
+              await refreshHardwarePortOptions();
+            }
+          } catch (e) {
+            showErrorAlert('Port Pair Notice', e.message);
           }
-        />
-      </Modal>
+        }}
+        onConnect={handleDirectConnectOptical}
+        onDisconnect={handleToggleOpticalConnection}
+        config={usbSerialConfig}
+        onChangeConfig={(newCfg) => setUsbSerialConfig(newCfg)}
+      />
 
-      {/* Modal Popup: Laser Port COM Settings */}
-      <Modal
+      {/* Modal Popup: Laser Port COM Settings (Image 2) */}
+      <HardwarePortModal
         isOpen={showLaserSettings}
         onClose={() => setShowLaserSettings(false)}
-        maxWidth="500px"
-        title={
-          <div className="d-flex align-items-center gap-2">
-            <i className="ti ti-adjustments text-danger fs-5"></i>
-            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
-              Laser Port - COM Port Settings
-            </span>
-          </div>
-        }
-      >
-        <ComPortSettingsPanel
-          title="LASER PORT - COM PORT SETTINGS"
-          config={laserSerialConfig}
-          onChange={updateLaserConfig}
-          onClose={() => setShowLaserSettings(false)}
-          showHeader={false}
-          commChannelContent={
-            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-              <div className="input-group input-group-sm flex-grow-1">
-                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                  <i className="ti ti-cpu" style={{ fontSize: '12px' }}></i>
-                </span>
-                <select
-                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                  style={{ height: '34px', fontSize: '12px' }}
-                  value={selectedLaserPortId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '__laser_pair_new__') {
-                      setSelectedLaserPortId('__laser_pair_new__');
-                      handleConnectLaser(null, true);
-                      return;
-                    }
-                    setSelectedLaserPortId(val);
-                    if (val && val.startsWith('laser_paired_')) {
-                      const idx = parseInt(val.replace('laser_paired_', ''), 10);
-                      if (pairedLaserPorts[idx]) {
-                        setSelectedLaserPort(pairedLaserPorts[idx].friendlyName);
-                      }
-                    } else if (val && val.startsWith('laser_server_')) {
-                      setSelectedLaserPort(val.replace('laser_server_', ''));
-                    }
-                  }}
-                  disabled={laserStatus.checking || laserStatus.connected}
-                >
-                  <option value="" disabled>Select / Connect Laser Port...</option>
-                  {laserPortOptions.length > 0 ? (
-                    laserPortOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id} disabled={opt.isTaken}>
-                        {opt.label}{opt.takenMsg}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No Laser Port Detected</option>
-                  )}
-                  <option value="__laser_pair_new__">
-                    Select / Pair COM Port from Device Manager...
-                  </option>
-                </select>
-              </div>
-
-              {!laserStatus.connected ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                  onClick={handleDirectConnectLaser}
-                  disabled={laserStatus.checking}
-                  title="Connect Laser COM Port"
-                >
-                  <i className={`ti ${laserStatus.checking ? 'ti-loader spin' : 'ti-plug'}`} style={{ fontSize: '13px' }}></i>
-                  <span>{laserStatus.checking ? 'Connecting...' : 'Connect Port'}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '34px', fontSize: '12px' }}
-                  onClick={handleToggleLaserConnection}
-                  disabled={laserStatus.checking}
-                  title={`Disconnect (${laserStatus.friendlyName || laserStatus.port || 'Laser Port'})`}
-                >
-                  <i className="ti ti-power" style={{ fontSize: '13px' }}></i>
-                  <span>Disconnect</span>
-                </button>
-              )}
-            </div>
+        title="Laser Port"
+        connected={laserStatus.connected}
+        checking={laserStatus.checking}
+        portOptions={laserPortOptions}
+        selectedPort={selectedLaserPort}
+        onSelectPort={(val) => {
+          setSelectedLaserPort(val);
+          setSelectedLaserPortId(val);
+        }}
+        onPairNewPort={async () => {
+          try {
+            const paired = await unifiedHardwarePortManager.pairNewPort('laser');
+            if (paired) {
+              setSelectedLaserPort(paired.friendlyName);
+              setSelectedLaserPortId(paired.friendlyName);
+              await refreshHardwarePortOptions();
+            }
+          } catch (e) {
+            showErrorAlert('Port Pair Notice', e.message);
           }
-        />
-      </Modal>
+        }}
+        onConnect={handleDirectConnectLaser}
+        onDisconnect={handleToggleLaserConnection}
+        config={laserSerialConfig}
+        onChangeConfig={(newCfg) => setLaserSerialConfig(newCfg)}
+      />
 
       {/* 1st Time Connection Guide Modal for Other Laptops */}
       <Modal

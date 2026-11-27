@@ -1,4 +1,5 @@
 const Stage04Service = require('./stage04.service');
+const { isRequestFromLocalServer } = require('../../../core/helpers/network.helper');
 
 const Stage04Controller = {
   /**
@@ -19,8 +20,17 @@ const Stage04Controller = {
    */
   async getUsbPorts(req, res, next) {
     try {
+      const isLocalhost = isRequestFromLocalServer(req);
+      if (!isLocalhost && req.query.allow_server_port !== 'true') {
+        return res.status(200).json({
+          success: true,
+          isServerMachine: false,
+          ports: [],
+          detailedPorts: []
+        });
+      }
       const result = await Stage04Service.scanPorts();
-      return res.status(200).json({ success: true, ...result });
+      return res.status(200).json({ success: true, isServerMachine: isLocalhost, ...result });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
     }
@@ -71,10 +81,21 @@ const Stage04Controller = {
    */
   async getPorts(req, res) {
     const requestId = req.id || req.headers['x-request-id'] || `REQ-${Date.now()}`;
+    const isLocalhost = isRequestFromLocalServer(req);
     try {
+      if (!isLocalhost && req.query.allow_server_port !== 'true') {
+        return res.status(200).json({
+          success: true,
+          isServerMachine: false,
+          ports: [],
+          detailedPorts: [],
+          requestId
+        });
+      }
       const result = await Stage04Service.scanPorts();
       return res.status(200).json({
         success: true,
+        isServerMachine: isLocalhost,
         ...result,
         requestId
       });

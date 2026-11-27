@@ -9,6 +9,10 @@ const opticalTunnels = new Map();
 function initWebSocketServer(server) {
   wss = new WebSocketServer({ server, path: '/ws' });
 
+  wss.on('error', (err) => {
+    logger.warn(`[WebSocketServer] ${err.message}`);
+  });
+
   wss.on('connection', (ws, req) => {
     logger.info(`WebSocket Client connected from ${req.socket.remoteAddress}`);
     clients.add(ws);

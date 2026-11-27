@@ -7,6 +7,9 @@ import { showWarningAlert, showErrorAlert, showSuccessAlert } from '../../../uti
 import { Modal } from '../../../components/CommonComponents';
 import MeterBodyPrintConsole from '../stage09-meter-box-print/MeterBodyPrintConsole';
 import laserWebSerialService from '../../../services/common/laserWebSerialService';
+import hardwarePortLockService, { extractPortIdentifier } from '../../../services/common/hardwarePortLockService';
+import unifiedHardwarePortManager from '../../../services/common/unifiedHardwarePortManager';
+import HardwarePortModal from '../../../components/common/hardware/HardwarePortModal';
 
 // SVG QR Code Generator Component for Printable NIC Labels
 function QRCodeSVG({ value, size = 110 }) {
@@ -498,11 +501,15 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
   const [printedChannels, setPrintedChannels] = useState({});
 
   // USB Serial Hardware Connection State
+  const currentOperatorId = user?.employee_id || user?.id || 'OPERATOR-04';
   const [usbConnected, setUsbConnected] = useState(false);
   const [usbDeviceName, setUsbDeviceName] = useState('');
   const [availablePorts, setAvailablePorts] = useState([]);
   const [detailedPorts, setDetailedPorts] = useState([]);
   const [selectedPort, setSelectedPort] = useState('');
+  const [activePortLocks, setActivePortLocks] = useState(() => hardwarePortLockService.getStoredLocks());
+  const [jigPortOptions, setJigPortOptions] = useState([]);
+  const [laserPortOptions, setLaserPortOptions] = useState([]);
 
   // COM Port Settings Panel State & Persistence
   const [showReceiveSettings, setShowReceiveSettings] = useState(false);
@@ -560,6 +567,52 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       return updated;
     });
   };
+
+  useEffect(() => {
+    setActivePortLocks(hardwarePortLockService.getStoredLocks());
+    return hardwarePortLockService.subscribe((locks) => {
+      setActivePortLocks({ ...locks });
+    });
+  }, []);
+
+  const refreshHardwarePortOptions = async () => {
+    try {
+      const jList = await unifiedHardwarePortManager.getAvailablePorts('jig', 4, laserConnected ? selectedLaserPort : null, usbConnected ? selectedPort : null);
+      setJigPortOptions(jList);
+      const lList = await unifiedHardwarePortManager.getAvailablePorts('laser', 4, usbConnected ? selectedPort : null, laserConnected ? selectedLaserPort : null);
+      setLaserPortOptions(lList);
+    } catch (_) { }
+  };
+
+  useEffect(() => {
+    refreshHardwarePortOptions();
+    const unsub = unifiedHardwarePortManager.setupHardwareListeners(() => {
+      refreshHardwarePortOptions();
+    });
+    return () => unsub();
+  }, [usbConnected, selectedPort, laserConnected, selectedLaserPort, activePortLocks]);
+
+  useEffect(() => {
+    if (usbConnected) return;
+    const valid = jigPortOptions.filter(o => !o.isTaken);
+    const matches = valid.some(o => o.value === selectedPort);
+    if (!matches && valid.length > 0) {
+      setSelectedPort(valid[0].value);
+    } else if (valid.length === 0) {
+      setSelectedPort('');
+    }
+  }, [jigPortOptions, selectedPort, usbConnected]);
+
+  useEffect(() => {
+    if (laserConnected) return;
+    const valid = laserPortOptions.filter(o => !o.isTaken);
+    const matches = valid.some(o => o.value === selectedLaserPort);
+    if (!matches && valid.length > 0) {
+      setSelectedLaserPort(valid[0].value);
+    } else if (valid.length === 0) {
+      setSelectedLaserPort('');
+    }
+  }, [laserPortOptions, selectedLaserPort, laserConnected]);
 
   const wsRef = useRef(null);
   const nonUsbPattern = /(bluetooth|blth|buds|airpods|incoming-port|rfcomm|debug-console)/i;
@@ -712,43 +765,85 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   // Connect USB COM Port on backend & persist
   const handleConnectJigPort = async (portToConnect = selectedPort) => {
-    if (!portToConnect) {
+    const target = portToConnect || (jigPortOptions.find(o => !o.isTaken)?.value);
+    if (!target) {
       showWarningAlert('No Port Selected', 'Please select a COM port to connect.');
+      return;
+    }
+    const lockCheck = hardwarePortLockService.checkLock(target, 4);
+    if (lockCheck.isLocked) {
+      showErrorAlert('Port Unavailable', lockCheck.message || 'This COM port is already in use by another stage.');
       return;
     }
     setIsConnectingPort(true);
     try {
       if (isDemoMode) {
         setUsbConnected(true);
-        setUsbDeviceName(portToConnect);
-        setSelectedPort(portToConnect);
+        setUsbDeviceName(target);
+        setSelectedPort(target);
+        hardwarePortLockService.claimLock(target, { stageId: 4, stageName: 'Stage 4', portType: 'NIC Receive Port' });
         setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
         setShowReceiveSettings(false);
         return;
       }
 
-      const res = await jigService.connectHardware({
-        path: portToConnect,
-        baudRate: jigSerialConfig.baudRate,
-        dataBits: jigSerialConfig.dataBits,
-        parity: jigSerialConfig.parity.toLowerCase(),
-        stopBits: jigSerialConfig.stopBits
-      });
+      let connectedSuccessfully = false;
+      let connectedDisplayName = target;
 
-      if (res.success && res.data && res.data.connected) {
-        setUsbConnected(true);
-        const displayName = res.data.device || res.data.details?.friendlyName || portToConnect;
-        setUsbDeviceName(displayName);
-        setSelectedPort(portToConnect);
+      if (unifiedHardwarePortManager.isSupported()) {
         try {
-          localStorage.setItem('zenmeter_jig_port_stage4', portToConnect);
-        } catch (e) { }
-        setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
-        setShowReceiveSettings(false);
-      } else {
-        setUsbConnected(false);
-        showErrorAlert('Connection Failed', res.message || res.data?.error?.message || 'Could not connect to selected COM port.');
+          const res = await unifiedHardwarePortManager.connectPort({
+            role: 'jig',
+            portName: target,
+            stageId: 4,
+            stageName: 'Stage 4',
+            portType: 'NIC Receive Port',
+            config: jigSerialConfig,
+            operatorId: currentOperatorId
+          });
+          if (res && res.portName) {
+            connectedDisplayName = res.portName;
+            connectedSuccessfully = true;
+          }
+        } catch (webSerialErr) {
+          console.warn('[Stage4] WebSerial connect attempt note:', webSerialErr.message);
+        }
       }
+
+      if (!connectedSuccessfully) {
+        const res = await jigService.connectHardware({
+          path: target,
+          baudRate: jigSerialConfig.baudRate,
+          dataBits: jigSerialConfig.dataBits,
+          parity: jigSerialConfig.parity.toLowerCase(),
+          stopBits: jigSerialConfig.stopBits
+        });
+
+        if (res.success && res.data && res.data.connected) {
+          connectedSuccessfully = true;
+          connectedDisplayName = res.data.device || res.data.details?.friendlyName || target;
+          hardwarePortLockService.claimLock(target, { stageId: 4, stageName: 'Stage 4', portType: 'NIC Receive Port' });
+          try {
+            localStorage.setItem('zenmeter_jig_was_connected', 'true');
+            localStorage.setItem('zenmeter_jig_last_port', target);
+            localStorage.setItem('zenmeter_jig_manual_disconnect', 'false');
+          } catch (_) { }
+        } else {
+          showErrorAlert('Connection Failed', res.message || res.data?.error?.message || 'Could not connect to selected COM port.');
+          setUsbConnected(false);
+          return;
+        }
+      }
+
+      setUsbConnected(true);
+      setUsbDeviceName(connectedDisplayName);
+      setSelectedPort(connectedDisplayName);
+      try {
+        localStorage.setItem('zenmeter_jig_port_stage4', connectedDisplayName);
+      } catch (e) { }
+      setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
+      setShowReceiveSettings(false);
+      await refreshHardwarePortOptions();
     } catch (err) {
       setUsbConnected(false);
       showErrorAlert('Connection Error', err.message || 'Error connecting to COM port.');
@@ -757,21 +852,22 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     }
   };
 
-  // Disconnect USB COM Port on backend
+  // Disconnect USB COM Port
   const handleDisconnectJigPort = async () => {
     setIsConnectingPort(true);
     try {
-      if (isDemoMode) {
-        setUsbConnected(false);
-        setUsbDeviceName('');
-        return;
+      if (selectedPort) {
+        await unifiedHardwarePortManager.disconnectPort({ role: 'jig', portName: selectedPort });
       }
-      await jigService.disconnectHardware();
+      try {
+        await jigService.disconnectHardware();
+      } catch (_) { }
       setUsbConnected(false);
       setUsbDeviceName('');
       try {
         localStorage.removeItem('zenmeter_jig_port_stage4');
       } catch (e) { }
+      await refreshHardwarePortOptions();
     } catch (err) {
       showErrorAlert('Disconnect Error', err.message || 'Error disconnecting COM port.');
     } finally {
@@ -781,63 +877,61 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   // Pair from Windows Device Manager via browser Web Serial API dialog
   const handlePairDeviceManagerPort = async () => {
-    if (typeof navigator !== 'undefined' && 'serial' in navigator) {
-      try {
-        await navigator.serial.requestPort();
-        await fetchAvailableUsbPorts();
-      } catch (err) {
-        if (err.name !== 'NotFoundError') {
-          console.warn('[Stage4] WebSerial device manager selection:', err);
-        }
+    try {
+      const paired = await unifiedHardwarePortManager.pairNewPort('jig');
+      if (paired) {
+        setSelectedPort(paired.friendlyName);
+        await refreshHardwarePortOptions();
       }
-    } else {
-      showWarningAlert('Device Manager Ports', 'System COM & LPT ports are automatically scanned and listed in the dropdown.');
+    } catch (e) {
+      if (e.name !== 'NotFoundError') {
+        showErrorAlert('Port Pair Error', e.message);
+      }
     }
   };
 
   // Connect Laser Port
   const handleConnectLaserPort = async (portToConnect = selectedLaserPort) => {
-    if (!portToConnect) {
+    const target = portToConnect || (laserPortOptions.find(o => !o.isTaken)?.value);
+    if (!target) {
       showWarningAlert('No Port Selected', 'Please select a Laser COM port to connect.');
+      return;
+    }
+    const lockCheck = hardwarePortLockService.checkLock(target, 4);
+    if (lockCheck.isLocked) {
+      showErrorAlert('Port Unavailable', lockCheck.message || 'This COM port is already in use by another stage.');
       return;
     }
     setIsConnectingLaserPort(true);
     try {
       if (isDemoMode) {
         setLaserConnected(true);
-        setLaserDeviceName(portToConnect);
-        setSelectedLaserPort(portToConnect);
+        setLaserDeviceName(target);
+        setSelectedLaserPort(target);
+        hardwarePortLockService.claimLock(target, { stageId: 4, stageName: 'Stage 4', portType: 'Laser Port' });
         setShowLaserSettings(false);
         return;
       }
 
-      if (laserWebSerialService.hasNativeSerial()) {
-        try {
-          const eff = {
-            baudRate: Number(laserSerialConfig.baudRate) || 9600,
-            dataBits: Number(laserSerialConfig.dataBits) || 8,
-            parity: laserSerialConfig.parity.toLowerCase(),
-            stopBits: Number(laserSerialConfig.stopBits) || 1
-          };
-          const paired = await laserWebSerialService.getPairedPorts();
-          const matched = paired.find(p => p.friendlyName === portToConnect || p.path === portToConnect);
-          if (matched && matched.port) {
-            await laserWebSerialService.connectPort(matched.port, eff);
-          }
-        } catch (e) {
-          console.warn('[Stage4] WebSerial laser connect notice:', e);
-        }
-      }
+      const res = await unifiedHardwarePortManager.connectPort({
+        role: 'laser',
+        portName: target,
+        stageId: 4,
+        stageName: 'Stage 4',
+        portType: 'Laser Port',
+        config: laserSerialConfig,
+        operatorId: currentOperatorId
+      });
 
+      const finalName = res.portName || target;
       setLaserConnected(true);
-      const matchedDp = detailedPorts.find(dp => dp.path === portToConnect);
-      const displayName = matchedDp?.friendlyName || matchedDp?.shortName || portToConnect;
-      setLaserDeviceName(displayName);
-      setSelectedLaserPort(portToConnect);
+      setLaserDeviceName(finalName);
+      setSelectedLaserPort(finalName);
       try {
-        localStorage.setItem('zenmeter_laser_port_stage4', portToConnect);
+        localStorage.setItem('zenmeter_laser_port_stage4', finalName);
       } catch (e) { }
       setShowLaserSettings(false);
+      await refreshHardwarePortOptions();
     } catch (err) {
       setLaserConnected(false);
       showErrorAlert('Laser Connect Error', err.message || 'Error connecting to Laser COM port.');
@@ -850,14 +944,15 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
   const handleDisconnectLaserPort = async () => {
     setIsConnectingLaserPort(true);
     try {
-      if (laserWebSerialService.connected) {
-        await laserWebSerialService.disconnect();
+      if (selectedLaserPort) {
+        await unifiedHardwarePortManager.disconnectPort({ role: 'laser', portName: selectedLaserPort });
       }
       setLaserConnected(false);
       setLaserDeviceName('');
       try {
         localStorage.removeItem('zenmeter_laser_port_stage4');
       } catch (e) { }
+      await refreshHardwarePortOptions();
     } catch (err) {
       showErrorAlert('Disconnect Error', err.message || 'Error disconnecting Laser COM port.');
     } finally {
@@ -867,17 +962,16 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
 
   // Pair Laser Port from Windows Device Manager
   const handlePairLaserDeviceManagerPort = async () => {
-    if (typeof navigator !== 'undefined' && 'serial' in navigator) {
-      try {
-        await navigator.serial.requestPort();
-        await fetchAvailableUsbPorts();
-      } catch (err) {
-        if (err.name !== 'NotFoundError') {
-          console.warn('[Stage4] Laser device manager selection:', err);
-        }
+    try {
+      const paired = await unifiedHardwarePortManager.pairNewPort('laser');
+      if (paired) {
+        setSelectedLaserPort(paired.friendlyName);
+        await refreshHardwarePortOptions();
       }
-    } else {
-      showWarningAlert('Device Manager Ports', 'System COM & LPT ports are automatically scanned and listed in the dropdown.');
+    } catch (e) {
+      if (e.name !== 'NotFoundError') {
+        showErrorAlert('Laser Pair Error', e.message);
+      }
     }
   };
 
@@ -893,56 +987,7 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       setSelectedPort('DEMO-PORT-01');
       return;
     }
-    try {
-      const res = await jigService.listUsbPorts();
-      const rawPorts = res.ports || [];
-      const rawDetailed = res.detailedPorts || rawPorts.map(p => ({ path: p, friendlyName: p }));
-
-      const cleanPath = (p) => (typeof p === 'string' && p.startsWith('/dev/tty.') ? p.replace('/dev/tty.', '/dev/cu.') : p);
-
-      const filteredPorts = rawPorts.map(cleanPath).filter(p => !nonUsbPattern.test(p));
-      const filteredDetailed = rawDetailed.map(dp => ({
-        ...dp,
-        path: cleanPath(dp.path),
-        friendlyName: cleanPath(dp.friendlyName || dp.shortName || dp.path)
-      })).filter(dp => !nonUsbPattern.test(dp.path || dp.friendlyName || dp.label || ''));
-
-      setAvailablePorts(filteredPorts);
-      setDetailedPorts(filteredDetailed);
-
-      // Preserve existing connection if port is still detected in Device Manager
-      if (usbConnected && selectedPort) {
-        const stillPresent = filteredPorts.some(p => p.toLowerCase() === selectedPort.toLowerCase());
-        if (!stillPresent) {
-          // Hardware cable physically removed from system / Device Manager
-          setUsbConnected(false);
-          setUsbDeviceName('');
-          setTestState('IDLE');
-        }
-      } else if (!selectedPort && filteredPorts.length > 0) {
-        const saved = localStorage.getItem('zenmeter_jig_port_stage4');
-        if (saved && filteredPorts.includes(saved)) {
-          setSelectedPort(saved);
-        } else {
-          setSelectedPort(filteredPorts[0]);
-        }
-      }
-
-      if (laserConnected && selectedLaserPort) {
-        const stillPresent = filteredPorts.some(p => p.toLowerCase() === selectedLaserPort.toLowerCase());
-        if (!stillPresent) {
-          setLaserConnected(false);
-          setLaserDeviceName('');
-        }
-      } else if (!selectedLaserPort && filteredPorts.length > 0) {
-        const savedLaser = localStorage.getItem('zenmeter_laser_port_stage4');
-        if (savedLaser && filteredPorts.includes(savedLaser)) {
-          setSelectedLaserPort(savedLaser);
-        }
-      }
-    } catch (e) {
-      console.warn('[Frontend] Port scan notice:', e.message);
-    }
+    await refreshHardwarePortOptions();
   };
 
   // Query hardware port status on mount - strict persistence across reloads
@@ -952,7 +997,39 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
     let isMounted = true;
     const checkInitialPortStatus = async () => {
       try {
-        // 1. Check if backend is already connected
+        // 1. Auto-reconnect WebSerial ports across reloads (F5) without disconnecting
+        if (unifiedHardwarePortManager.isSupported()) {
+          const restoredJig = await unifiedHardwarePortManager.restorePortOnMount({
+            role: 'jig',
+            stageId: 4,
+            stageName: 'Stage 4',
+            portType: 'NIC Receive Port',
+            config: jigSerialConfig,
+            operatorId: currentOperatorId
+          });
+          if (restoredJig && isMounted) {
+            setUsbConnected(true);
+            setSelectedPort(restoredJig.portName);
+            setUsbDeviceName(restoredJig.portName);
+            setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
+          }
+
+          const restoredLaser = await unifiedHardwarePortManager.restorePortOnMount({
+            role: 'laser',
+            stageId: 4,
+            stageName: 'Stage 4',
+            portType: 'Laser Port',
+            config: laserSerialConfig,
+            operatorId: currentOperatorId
+          });
+          if (restoredLaser && isMounted) {
+            setLaserConnected(true);
+            setSelectedLaserPort(restoredLaser.portName);
+            setLaserDeviceName(restoredLaser.portName);
+          }
+        }
+
+        // 2. Also check if backend is already connected
         const statusRes = await jigService.getJigStatus();
         if (isMounted && statusRes && statusRes.success && statusRes.data && statusRes.data.connected) {
           const activePort = statusRes.data.port;
@@ -963,32 +1040,24 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
           setTestState(prev => (prev === 'IDLE' || prev === 'USB_SCANNING') ? 'USB_CONNECTED' : prev);
         }
 
-        // 2. Scan ports and check saved port
-        const portsRes = await jigService.listUsbPorts();
-        const rawPorts = portsRes.ports || [];
-        const rawDetailed = portsRes.detailedPorts || rawPorts.map(p => ({ path: p, friendlyName: p }));
-        if (isMounted) {
-          setAvailablePorts(rawPorts);
-          setDetailedPorts(rawDetailed);
-        }
+        await refreshHardwarePortOptions();
 
-        const savedPort = localStorage.getItem('zenmeter_jig_port_stage4');
-        if (savedPort && rawPorts.includes(savedPort)) {
-          if (isMounted && !usbConnected) {
-            setSelectedPort(savedPort);
-            await handleConnectJigPort(savedPort);
-          }
-        } else if (rawPorts.length > 0 && isMounted && !selectedPort) {
-          setSelectedPort(rawPorts[0]);
-        }
-
-        // 3. Restore Laser port connection across reloads
-        const savedLaser = localStorage.getItem('zenmeter_laser_port_stage4');
-        if (savedLaser && isMounted) {
-          setSelectedLaserPort(savedLaser);
-          const matchedDp = rawDetailed.find(dp => dp.path === savedLaser);
-          setLaserDeviceName(matchedDp?.friendlyName || matchedDp?.shortName || savedLaser);
-          setLaserConnected(true);
+        // 3. Setup real-time unplug watcher
+        if (unifiedHardwarePortManager.isSupported()) {
+          unifiedHardwarePortManager.setupDisconnectWatcher({
+            onDisconnect: (role) => {
+              if (role === 'laser' && isMounted) {
+                setLaserConnected(false);
+                setLaserDeviceName('');
+                refreshHardwarePortOptions();
+              } else if (isMounted) {
+                setUsbConnected(false);
+                setUsbDeviceName('');
+                setTestState('IDLE');
+                refreshHardwarePortOptions();
+              }
+            }
+          });
         }
       } catch (err) {
         console.warn('[Stage4] Initial port check notice:', err.message);
@@ -1979,14 +2048,14 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                         style={{ maxWidth: '110px' }}
                         title={
                           usbConnected
-                            ? (detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName || detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName || usbDeviceName || selectedPort || 'Connected')
+                            ? (usbDeviceName || selectedPort || 'Connected')
                             : isConnectingPort
                               ? 'Connecting...'
                               : 'Disconnected'
                         }
                       >
                         {usbConnected
-                          ? (detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.friendlyName || detailedPorts.find(dp => dp.path === (usbDeviceName || selectedPort))?.shortName || usbDeviceName || selectedPort || 'Connected')
+                          ? (usbDeviceName ? (usbDeviceName.match(/COM\d+/i) ? `Connected (${usbDeviceName.match(/COM\d+/i)[0].toUpperCase()})` : 'Connected') : 'Connected')
                           : isConnectingPort
                             ? 'Connecting...'
                             : 'Disconnected'}
@@ -2052,14 +2121,14 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
                         style={{ maxWidth: '110px' }}
                         title={
                           laserConnected
-                            ? (detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.friendlyName || detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.shortName || laserDeviceName || selectedLaserPort || 'Connected')
+                            ? (laserDeviceName || selectedLaserPort || 'Connected')
                             : isConnectingLaserPort
                               ? 'Connecting...'
                               : 'Disconnected'
                         }
                       >
                         {laserConnected
-                          ? (detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.friendlyName || detailedPorts.find(dp => dp.path === (laserDeviceName || selectedLaserPort))?.shortName || laserDeviceName || selectedLaserPort || 'Connected')
+                          ? (laserDeviceName ? (laserDeviceName.match(/COM\d+/i) ? `Connected (${laserDeviceName.match(/COM\d+/i)[0].toUpperCase()})` : 'Connected') : 'Connected')
                           : isConnectingLaserPort
                             ? 'Connecting...'
                             : 'Disconnected'}
@@ -2085,176 +2154,38 @@ export default function StageExecution({ isDemo: propIsDemo, stageId: propStageI
       </div>
 
       {/* Modal Popup: NIC Receive Port Settings */}
-      <Modal
+      <HardwarePortModal
         isOpen={showReceiveSettings}
         onClose={() => setShowReceiveSettings(false)}
-        maxWidth="500px"
-        title={
-          <div className="d-flex align-items-center gap-2">
-            <i className="ti ti-adjustments text-danger fs-5"></i>
-            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
-              NIC Receive Port - COM Port Settings
-            </span>
-          </div>
-        }
-      >
-        <ComPortSettingsPanel
-          config={jigSerialConfig}
-          onChange={updateJigConfig}
-          commChannelContent={
-            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-              <div className="input-group input-group-sm flex-grow-1">
-                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                  <i className="ti ti-plug" style={{ fontSize: '13px' }}></i>
-                </span>
-                <select
-                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                  style={{ height: '36px', fontSize: '12px' }}
-                  value={selectedPort}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '__pair_new__') {
-                      handlePairDeviceManagerPort();
-                      return;
-                    }
-                    setSelectedPort(val);
-                  }}
-                  disabled={isConnectingPort || usbConnected}
-                >
-                  <option value="" disabled>Select / Connect USB Port...</option>
-                  {detailedPorts.length > 0 ? (
-                    detailedPorts.map((dp, idx) => {
-                      const isTaken = Boolean(laserConnected && selectedLaserPort && dp.path === selectedLaserPort);
-                      return (
-                        <option key={dp.path || idx} value={dp.path} disabled={isTaken}>
-                          {dp.friendlyName || dp.shortName || dp.label || dp.path}{isTaken ? ' (In use by Laser Port)' : ''}
-                        </option>
-                      );
-                    })
-                  ) : (
-                    <option value="" disabled>No COM Port Detected</option>
-                  )}
-                  <option value="__pair_new__">
-                    Select / Pair COM Port from Device Manager...
-                  </option>
-                </select>
-              </div>
-
-              {!usbConnected ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
-                  onClick={() => handleConnectJigPort(selectedPort)}
-                  disabled={isConnectingPort || !selectedPort}
-                  title="Connect NIC Receive Port"
-                >
-                  <i className="ti ti-plug"></i>
-                  <span>{isConnectingPort ? 'Connecting...' : 'Connect Port'}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
-                  onClick={handleDisconnectJigPort}
-                  disabled={isConnectingPort}
-                  title="Disconnect NIC Receive Port"
-                >
-                  <i className="ti ti-plug-off"></i>
-                  <span>Disconnect</span>
-                </button>
-              )}
-            </div>
-          }
-        />
-      </Modal>
+        title="NIC Receive Port"
+        connected={usbConnected}
+        checking={isConnectingPort}
+        portOptions={jigPortOptions}
+        selectedPort={selectedPort}
+        onSelectPort={(val) => setSelectedPort(val)}
+        onPairNewPort={handlePairDeviceManagerPort}
+        onConnect={() => handleConnectJigPort(selectedPort)}
+        onDisconnect={handleDisconnectJigPort}
+        config={jigSerialConfig}
+        onChangeConfig={(newCfg) => setJigSerialConfig(newCfg)}
+      />
 
       {/* Modal Popup: Laser Port Settings */}
-      <Modal
+      <HardwarePortModal
         isOpen={showLaserSettings}
         onClose={() => setShowLaserSettings(false)}
-        maxWidth="500px"
-        title={
-          <div className="d-flex align-items-center gap-2">
-            <i className="ti ti-adjustments text-danger fs-5"></i>
-            <span className="text-uppercase fw-bold text-dark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
-              Laser Port - COM Port Settings
-            </span>
-          </div>
-        }
-      >
-        <ComPortSettingsPanel
-          config={laserSerialConfig}
-          onChange={updateLaserConfig}
-          commChannelContent={
-            <div className="d-flex flex-row align-items-center" style={{ gap: '8px' }}>
-              <div className="input-group input-group-sm flex-grow-1">
-                <span className="input-group-text bg-white border-secondary-subtle text-muted px-2.5">
-                  <i className="ti ti-cpu" style={{ fontSize: '13px' }}></i>
-                </span>
-                <select
-                  className="form-select form-select-sm fw-medium bg-white border-secondary-subtle text-truncate"
-                  style={{ height: '36px', fontSize: '12px' }}
-                  value={selectedLaserPort}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '__pair_new__') {
-                      handlePairLaserDeviceManagerPort();
-                      return;
-                    }
-                    setSelectedLaserPort(val);
-                  }}
-                  disabled={isConnectingLaserPort || laserConnected}
-                >
-                  <option value="" disabled>Select / Connect Laser Port...</option>
-                  {detailedPorts.length > 0 ? (
-                    detailedPorts.map((dp, idx) => {
-                      const isTaken = Boolean(usbConnected && selectedPort && dp.path === selectedPort);
-                      return (
-                        <option key={dp.path || idx} value={dp.path} disabled={isTaken}>
-                          {dp.friendlyName || dp.shortName || dp.label || dp.path}{isTaken ? ' (In use by NIC Receive Port)' : ''}
-                        </option>
-                      );
-                    })
-                  ) : (
-                    <option value="" disabled>No COM Port Detected</option>
-                  )}
-                  <option value="__pair_new__">
-                    Select / Pair COM Port from Device Manager...
-                  </option>
-                </select>
-              </div>
-
-              {!laserConnected ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-success px-3 fw-semibold text-white shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
-                  onClick={() => handleConnectLaserPort(selectedLaserPort)}
-                  disabled={isConnectingLaserPort || !selectedLaserPort}
-                  title="Connect Laser Port"
-                >
-                  <i className="ti ti-plug"></i>
-                  <span>{isConnectingLaserPort ? 'Connecting...' : 'Connect Port'}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger px-3 fw-semibold shadow-xs d-inline-flex align-items-center justify-content-center text-nowrap flex-shrink-0"
-                  style={{ gap: '6px', height: '36px', fontSize: '12px' }}
-                  onClick={handleDisconnectLaserPort}
-                  disabled={isConnectingLaserPort}
-                  title="Disconnect Laser Port"
-                >
-                  <i className="ti ti-plug-off"></i>
-                  <span>Disconnect</span>
-                </button>
-              )}
-            </div>
-          }
-        />
-      </Modal>
+        title="Laser Port"
+        connected={laserConnected}
+        checking={isConnectingLaserPort}
+        portOptions={laserPortOptions}
+        selectedPort={selectedLaserPort}
+        onSelectPort={(val) => setSelectedLaserPort(val)}
+        onPairNewPort={handlePairLaserDeviceManagerPort}
+        onConnect={() => handleConnectLaserPort(selectedLaserPort)}
+        onDisconnect={handleDisconnectLaserPort}
+        config={laserSerialConfig}
+        onChangeConfig={(newCfg) => setLaserSerialConfig(newCfg)}
+      />
 
       {/* Active Work Order / Work ID Card assigned by Admin/Supervisor */}
       {/* 8-Channel Telemetry Grid */}
