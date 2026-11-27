@@ -2,12 +2,15 @@ const os = require('os');
 const Stage09Service = require('./stage09.service');
 
 function isRequestFromLocalServer(req) {
-  const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '';
-  const cleanIp = String(rawIp).replace(/^.*:/, '').trim();
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.socket?.remoteAddress || req.ip || '');
+  const cleanIp = String(rawIp).replace(/^::ffff:/, '').replace(/^.*:/, '').trim();
 
   if (
     cleanIp === '127.0.0.1' ||
     cleanIp === 'localhost' ||
+    cleanIp === '::1' ||
+    rawIp === '127.0.0.1' ||
     rawIp === '::1' ||
     rawIp === '::ffff:127.0.0.1'
   ) {
@@ -18,7 +21,7 @@ function isRequestFromLocalServer(req) {
     const networkInterfaces = os.networkInterfaces();
     for (const interfaceKey of Object.keys(networkInterfaces)) {
       for (const net of networkInterfaces[interfaceKey]) {
-        if (net && net.address === cleanIp) {
+        if (net && (net.address === cleanIp || net.address === rawIp)) {
           return true;
         }
       }
@@ -43,15 +46,30 @@ const Stage09Controller = {
           isLocalhost,
           allowServerPort: false
         });
-        return res.status(200).json({ success: true, isServerMachine: false, ...result });
+        return res.status(200).json({ success: true, isServerMachine: isLocalhost, ...result });
       }
 
-      // 2. Physical server COM port check
+      // If remote client PC and no active tunnel, do NOT expose server COM port as client's device!
+      if (!isLocalhost && req.query.allow_server_port !== 'true') {
+        return res.status(200).json({
+          success: true,
+          isServerMachine: false,
+          connected: false,
+          port: null,
+          friendlyName: null,
+          baudRate: 9600,
+          ports: [],
+          source: 'client_disconnected',
+          message: 'Client workstation. Optical Cable should be connected to this computer.'
+        });
+      }
+
+      // 2. Physical server COM port check (only for local server host or explicit server port check)
       const result = await Stage09Service.checkOpticalCable({
-        isLocalhost: true,
-        allowServerPort: true
+        isLocalhost,
+        allowServerPort: isLocalhost || req.query.allow_server_port === 'true'
       });
-      return res.status(200).json({ success: true, isServerMachine: true, ...result });
+      return res.status(200).json({ success: true, isServerMachine: isLocalhost, ...result });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
     }
@@ -309,8 +327,27 @@ const Stage09Controller = {
   async checkLaserStatus(req, res, next) {
     try {
       const { deviceId, tunnelId } = req.query || {};
-      const result = await Stage09Service.checkLaserStatus({ deviceId, tunnelId });
-      return res.status(200).json({ success: true, isServerMachine: true, ...result });
+      const isLocalhost = isRequestFromLocalServer(req);
+
+      // If remote client PC and no laser tunnel, do NOT claim server laser COM port
+      if (!isLocalhost && !tunnelId && req.query.allow_server_port !== 'true') {
+        return res.status(200).json({
+          success: true,
+          isServerMachine: false,
+          connected: false,
+          port: null,
+          friendlyName: null,
+          baudRate: 9600,
+          dataBits: 8,
+          parity: 'none',
+          stopBits: 1,
+          ports: [],
+          message: 'Client workstation. Laser Port should be connected to this computer.'
+        });
+      }
+
+      const result = await Stage09Service.checkLaserStatus({ deviceId, tunnelId, isLocalhost });
+      return res.status(200).json({ success: true, isServerMachine: isLocalhost, ...result });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
     }

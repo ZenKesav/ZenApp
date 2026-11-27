@@ -942,8 +942,7 @@ export default function Stage08Page() {
     try {
       const devId = webSerialService.deviceId;
       optStatusRes = await stage08Service.getOpticalStatus({
-        deviceId: devId,
-        allow_server_port: 'true'
+        deviceId: devId
       });
       if (optStatusRes?.isServerMachine !== undefined) {
         isServer = optStatusRes.isServerMachine;
@@ -952,8 +951,10 @@ export default function Stage08Page() {
       detectedServerPorts = (optStatusRes && Array.isArray(optStatusRes.ports))
         ? optStatusRes.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
         : [];
-      if (checkMounted() && detectedServerPorts.length > 0) {
+      if (checkMounted() && isServer && detectedServerPorts.length > 0) {
         setAvailableOpticalPorts(detectedServerPorts);
+      } else if (checkMounted() && !isServer) {
+        setAvailableOpticalPorts([]);
       }
     } catch (e) {
       console.warn('[Stage08] Port scan error on mount:', e.message);
@@ -976,7 +977,7 @@ export default function Stage08Page() {
     );
     const shouldConnectOptical = !opticalManualDisconnect && (wasOpticalConnected || Boolean(lastOpticalPort));
 
-    if (isBackendOpticalOpen && checkMounted()) {
+    if (isServer && isBackendOpticalOpen && checkMounted()) {
       // Backend already has port connected -> restore connection in frontend state
       const activePort = optStatusRes.port ? (extractPortKey(optStatusRes.port) || optStatusRes.port) : (lastOpticalPort || 'COM3');
       setOpticalStatus({
@@ -1038,12 +1039,12 @@ export default function Stage08Page() {
         }
       }
 
-      // Option B: Reconnect server COM port
-      const targetServerPort = (lastOpticalPort && optIsPhysicallyPresent)
+      // Option B: Reconnect server COM port (Only on server machine)
+      const targetServerPort = (isServer && lastOpticalPort && optIsPhysicallyPresent)
         ? lastOpticalPort
-        : (detectedServerPorts.length > 0 ? detectedServerPorts[0].path : null);
+        : (isServer && detectedServerPorts.length > 0 ? detectedServerPorts[0].path : null);
 
-      if (targetServerPort && checkMounted()) {
+      if (isServer && targetServerPort && checkMounted()) {
         const success = await handleConnectServerPort(targetServerPort, true);
         if (success && checkMounted()) return;
       }
@@ -1144,29 +1145,37 @@ export default function Stage08Page() {
         }
       }
 
-      // Case B: Server COM port check
-      try {
-        const res = await stage08Service.getOpticalStatus({ allow_server_port: 'true' });
-        if (!isMounted) return;
-        const currentPorts = (res && Array.isArray(res.ports))
-          ? res.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
-          : [];
-        setAvailableOpticalPorts(currentPorts);
-
-        if (currentStatus.connected && currentStatus.source === 'server') {
-          const connectedPath = (currentStatus.port || selectedOpticalPortRef.current || '').toLowerCase();
-          const cleanKey = extractPortKey(connectedPath).toLowerCase();
-          const stillPresent = currentPorts.some(p => {
-            const pPath = (p.path || '').toLowerCase();
-            const pKey = extractPortKey(pPath).toLowerCase();
-            const fKey = extractPortKey(p.friendlyName || '').toLowerCase();
-            return pPath === connectedPath || (cleanKey && (pKey === cleanKey || fKey === cleanKey));
+      // Case B: Server COM port check (Only on server machine)
+      if (isServerMachine || currentStatus.source === 'server') {
+        try {
+          const res = await stage08Service.getOpticalStatus({
+            deviceId: webSerialService.deviceId,
+            tunnelId: opticalStatusRef.current?.tunnelId || '',
+            allow_server_port: 'true'
           });
-          if (!stillPresent && !res?.connected) {
-            await handleHardwareDisconnection('Optical COM port physically unplugged from computer.', false);
+          if (!isMounted) return;
+          const currentPorts = (res && Array.isArray(res.ports))
+            ? res.ports.filter(p => !isDummyPortName(p.friendlyName || p.path))
+            : [];
+          setAvailableOpticalPorts(currentPorts);
+
+          if (currentStatus.connected && currentStatus.source === 'server') {
+            const connectedPath = (currentStatus.port || selectedOpticalPortRef.current || '').toLowerCase();
+            const cleanKey = extractPortKey(connectedPath).toLowerCase();
+            const stillPresent = currentPorts.some(p => {
+              const pPath = (p.path || '').toLowerCase();
+              const pKey = extractPortKey(pPath).toLowerCase();
+              const fKey = extractPortKey(p.friendlyName || '').toLowerCase();
+              return pPath === connectedPath || (cleanKey && (pKey === cleanKey || fKey === cleanKey));
+            });
+            if (!stillPresent && !res?.connected) {
+              await handleHardwareDisconnection('Optical COM port physically unplugged from computer.', false);
+            }
           }
-        }
-      } catch (_) { }
+        } catch (_) { }
+      } else {
+        setAvailableOpticalPorts([]);
+      }
     }, 2500);
 
     return () => {

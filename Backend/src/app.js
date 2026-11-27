@@ -28,6 +28,7 @@ const AnalysisController = require('./modules/analysis/analysis.controller');
 const { authenticate } = require('./core/middlewares/auth.middleware');
 
 const app = express();
+app.set('trust proxy', true);
 
 // Core Middleware Configuration
 app.use(cors());
